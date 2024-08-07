@@ -15,12 +15,21 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const dvui_dep = b.dependency("dvui", .{ .target = target, .optimize = optimize });
+
     const exe = b.addExecutable(.{
         .name = "webmaker2000",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    exe.root_module.addImport("dvui", dvui_dep.module("dvui"));
+    exe.root_module.addImport("SDLBackend", dvui_dep.module("SDLBackend"));
+
+    const compile_step = b.step("compile-main", "Compile main");
+    compile_step.dependOn(&b.addInstallArtifact(exe, .{}).step);
+    b.getInstallStep().dependOn(compile_step);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

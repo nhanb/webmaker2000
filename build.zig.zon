@@ -51,6 +51,11 @@
         //    // actually used.
         //    .lazy = false,
         //},
+
+        .dvui = .{
+            .url = "https://github.com/david-vanderson/dvui/archive/7688c6f78718b315f9462d9fba668dfdff8ac2d6.tar.gz",
+            .hash = "1220e6e6248430c334b7e452c920a3f2096a141155e2da81126effd9b9d7c1c506d3",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.
