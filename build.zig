@@ -13,8 +13,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    exe.root_module.addImport("dvui", dvui_dep.module("dvui"));
-    exe.root_module.addImport("SDLBackend", dvui_dep.module("SDLBackend"));
+    exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl"));
 
     const compile_step = b.step("compile", "Compile");
     compile_step.dependOn(&b.addInstallArtifact(exe, .{}).step);

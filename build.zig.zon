@@ -3,11 +3,8 @@
     .version = "0.0.1",
     .dependencies = .{
         .dvui = .{
-            //.url = "https://github.com/david-vanderson/dvui/archive/v0.1.0.tar.gz",
-            //.hash = "1220809b3fef9e2ae3a3c86ad92daa5640f456749dc4cf25ae32d76e31e9d3495333",
-
-            .url = "https://github.com/david-vanderson/dvui/archive/aa61ff280648c9f04f155d6285ba022c1b965759.tar.gz",
-            .hash = "12204837b026be1063d57ba282fe87c2e5881f3e8b82ddaf026a006e1f01c4b68416",
+            .url = "https://github.com/david-vanderson/dvui/archive/4a51d1fc72fce49528c1e2d5b9b8454dfaca34bc.tar.gz",
+            .hash = "12204cbfe8f3f7811169d6abbab2f6214e5e15872c20ac1e1b1df68cfd10bb5b871c",
         },
     },
     .paths = .{""},
