@@ -5,17 +5,22 @@ comptime {
 }
 const Backend = dvui.backend;
 
-const window_icon_png = @embedFile("zig-favicon.png");
-
 var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa = gpa_instance.allocator();
 
 const vsync = true;
+const show_demo = false;
+var scale_val: f32 = 1.0;
+
+var show_dialog_outside_frame: bool = false;
+var g_backend: ?Backend = null;
 
 /// This example shows how to use the dvui for a normal application:
 /// - dvui renders the whole application
 /// - render frames only when needed
 pub fn main() !void {
+    dvui.Examples.show_demo_window = show_demo;
+
     defer _ = gpa_instance.deinit();
 
     // init SDL backend (creates and owns OS window)
@@ -24,9 +29,9 @@ pub fn main() !void {
         .size = .{ .w = 800.0, .h = 600.0 },
         .min_size = .{ .w = 250.0, .h = 350.0 },
         .vsync = vsync,
-        .title = "DVUI SDL Standalone Example",
-        .icon = window_icon_png, // can also call setIconFromFileContent()
+        .title = "WebMaker2000",
     });
+    g_backend = backend;
     defer backend.deinit();
 
     // init dvui Window (maps onto a single OS window)
@@ -50,7 +55,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        // both dvui and SDL drawing
+        // The demos we pass in here show up under "Platform-specific demos"
         try gui_frame();
 
         // marks end of dvui frame, don't call dvui functions after this
@@ -59,6 +64,7 @@ pub fn main() !void {
 
         // cursor management
         backend.setCursor(win.cursorRequested());
+        backend.textInputRect(win.textInputRequested());
 
         // render frame to OS
         backend.renderPresent();
@@ -69,6 +75,7 @@ pub fn main() !void {
     }
 }
 
+// both dvui and SDL drawing
 fn gui_frame() !void {
     {
         var m = try dvui.menu(@src(), .horizontal, .{ .background = true, .expand = .horizontal });
@@ -79,7 +86,7 @@ fn gui_frame() !void {
             defer fw.deinit();
 
             if (try dvui.menuItemLabel(@src(), "Close Menu", .{}, .{}) != null) {
-                dvui.menuGet().?.close();
+                m.close();
             }
         }
 
@@ -95,7 +102,7 @@ fn gui_frame() !void {
     var scroll = try dvui.scrollArea(@src(), .{}, .{ .expand = .both, .color_fill = .{ .name = .fill_window } });
     defer scroll.deinit();
 
-    var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal, .font_style = .heading });
+    var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal, .font_style = .title_4 });
     const lorem = "This example shows how to use dvui in a normal application.";
     try tl.addText(lorem, .{});
     tl.deinit();
@@ -126,6 +133,33 @@ fn gui_frame() !void {
     }
     tl2.deinit();
 
+    const label = if (dvui.Examples.show_demo_window) "Hide Demo Window" else "Show Demo Window";
+    if (try dvui.button(@src(), label, .{}, .{})) {
+        dvui.Examples.show_demo_window = !dvui.Examples.show_demo_window;
+    }
+
+    {
+        var scaler = try dvui.scale(@src(), scale_val, .{ .expand = .horizontal });
+        defer scaler.deinit();
+
+        {
+            var hbox = try dvui.box(@src(), .horizontal, .{});
+            defer hbox.deinit();
+
+            if (try dvui.button(@src(), "Zoom In", .{}, .{})) {
+                scale_val = @round(dvui.themeGet().font_body.size * scale_val + 1.0) / dvui.themeGet().font_body.size;
+            }
+
+            if (try dvui.button(@src(), "Zoom Out", .{}, .{})) {
+                scale_val = @round(dvui.themeGet().font_body.size * scale_val - 1.0) / dvui.themeGet().font_body.size;
+            }
+        }
+    }
+
+    if (try dvui.button(@src(), "Show Dialog From\nOutside Frame", .{}, .{})) {
+        show_dialog_outside_frame = true;
+    }
+
     // look at demo() for examples of dvui widgets, shows in a floating window
-    //try dvui.Examples.demo();
+    try dvui.Examples.demo();
 }

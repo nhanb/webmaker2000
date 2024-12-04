@@ -1,10 +1,11 @@
+
 .{
     .name = "dvui-demo",
     .version = "0.0.1",
     .dependencies = .{
         .dvui = .{
-            .url = "https://github.com/david-vanderson/dvui/archive/4a51d1fc72fce49528c1e2d5b9b8454dfaca34bc.tar.gz",
-            .hash = "12204cbfe8f3f7811169d6abbab2f6214e5e15872c20ac1e1b1df68cfd10bb5b871c",
+            .url = "https://github.com/david-vanderson/dvui/archive/316de718eef5166cbdf9125656b35abaeb621445.tar.gz",
+            .hash = "12202bc99ddacde83c39ae59dc29b31b192ea20c9c67f62a4cffb19b2d2a31f0bccb",
         },
     },
     .paths = .{""},
