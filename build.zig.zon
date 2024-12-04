@@ -1,4 +1,3 @@
-
 .{
     .name = "dvui-demo",
     .version = "0.0.1",
@@ -6,6 +5,10 @@
         .dvui = .{
             .url = "https://github.com/david-vanderson/dvui/archive/316de718eef5166cbdf9125656b35abaeb621445.tar.gz",
             .hash = "12202bc99ddacde83c39ae59dc29b31b192ea20c9c67f62a4cffb19b2d2a31f0bccb",
+        },
+        .zqlite = .{
+            .url = "https://github.com/karlseguin/zqlite.zig/archive/refs/heads/zig-0.13.zip",
+            .hash = "12205c870252c9d4a38397809f5388b13dbc6a4550f50d5f214a355f601e38814a67",
         },
     },
     .paths = .{""},
