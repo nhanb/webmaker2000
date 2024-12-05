@@ -1,6 +1,11 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
+
+const zqlite_utils = @import("zqlite_utils.zig");
+const selectInt = zqlite_utils.selectInt;
+const execPrintErr = zqlite_utils.execPrintErr;
+
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
 }
@@ -19,22 +24,24 @@ const Post = struct {
     content: []const u8,
 };
 
-const GuiState = union(enum) {
+const Scene = enum {
+    listing,
+    editing,
+};
+
+const GuiState = union(Scene) {
     listing: struct {
         posts: []Post,
     },
     editing: i64, // post ID
 
     fn read(conn: *zqlite.Conn, arena: std.mem.Allocator) !GuiState {
-        var current_scene_id: i64 = undefined;
+        const current_scene: Scene = @enumFromInt(
+            try selectInt(conn, "select current_scene from gui_scene"),
+        );
 
-        if (try conn.row("SELECT current_scene FROM gui_scene;", .{})) |row| {
-            defer row.deinit();
-            current_scene_id = row.int(0);
-        }
-
-        switch (current_scene_id) {
-            @intFromEnum(GuiState.listing) => {
+        switch (current_scene) {
+            .listing => {
                 var posts = std.ArrayList(Post).init(arena);
                 var rows = try conn.rows("SELECT id, title, content FROM post ORDER BY id DESC", .{});
                 defer rows.deinit();
@@ -44,7 +51,6 @@ const GuiState = union(enum) {
                         .title = try arena.dupe(u8, row.text(1)),
                         .content = try arena.dupe(u8, row.text(2)),
                     };
-                    std.debug.print(">> post: {d}, {s}, {s}\n", .{ post.id, post.title, post.content });
                     try posts.append(post);
                 }
                 if (rows.err) |err| return err;
@@ -52,9 +58,10 @@ const GuiState = union(enum) {
                 return .{ .listing = .{ .posts = posts.items } };
             },
 
-            @intFromEnum(GuiState.editing) => return .{ .editing = 99 },
-
-            else => unreachable,
+            .editing => {
+                const post_id = try selectInt(conn, "select post_id from gui_scene_editing");
+                return .{ .editing = post_id };
+            },
         }
     }
 };
@@ -82,6 +89,7 @@ pub fn main() !void {
     // init sqlite connection
     const flags = zqlite.OpenFlags.Create | zqlite.OpenFlags.ReadWrite | zqlite.OpenFlags.EXResCode;
     var conn = try zqlite.open(DB_PATH, flags);
+    try conn.execNoArgs("PRAGMA foreign_keys = ON;");
     try conn.execNoArgs(
         \\CREATE TABLE post (
         \\  id INTEGER PRIMARY KEY,
@@ -96,12 +104,20 @@ pub fn main() !void {
             \\  current_scene INTEGER DEFAULT {d}
             \\);
         ,
-            .{@intFromEnum(GuiState.listing)},
+            .{@intFromEnum(Scene.listing)},
         ),
     );
-    conn.execNoArgs("INSERT INTO gui_scene(id) VALUES(0);") catch {
+    conn.execNoArgs("insert into gui_scene (id) values (0)") catch {
         std.debug.print(">> {s}", .{conn.lastError()});
     };
+    try conn.execNoArgs(
+        \\create table gui_scene_editing (
+        \\  id integer primary key check(id = 0) default 0,
+        \\  post_id integer default null,
+        \\  foreign key (post_id) references post (id) on delete set null
+        \\)
+    );
+    try conn.execNoArgs("insert into gui_scene_editing(id) values(0)");
 
     try conn.exec(
         "INSERT INTO post (title, content) VALUES (?1, ?2);",
@@ -136,7 +152,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        try gui_frame(&gui_state, arena.allocator());
+        try gui_frame(&gui_state, arena.allocator(), &conn);
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -156,7 +172,11 @@ pub fn main() !void {
 }
 
 // both dvui and SDL drawing
-fn gui_frame(gui_state: *const GuiState, arena: std.mem.Allocator) !void {
+fn gui_frame(
+    gui_state: *const GuiState,
+    arena: std.mem.Allocator,
+    conn: *zqlite.Conn,
+) !void {
     {
         var m = try dvui.menu(@src(), .horizontal, .{ .background = true, .expand = .horizontal });
         defer m.deinit();
@@ -192,61 +212,48 @@ fn gui_frame(gui_state: *const GuiState, arena: std.mem.Allocator) !void {
 
     switch (gui_state.*) {
         .listing => |state| {
-            var tl1 = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
-            defer tl1.deinit();
-            for (state.posts) |post| {
-                try tl1.addText(
-                    try std.fmt.allocPrint(arena, "{d}. {s} - {s}\n", .{ post.id, post.title, post.content }),
-                    .{},
+            for (state.posts, 0..) |post, i| {
+                var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
+                defer hbox.deinit();
+
+                if (try dvui.button(@src(), "Edit", .{}, .{})) {
+                    try conn.transaction();
+                    errdefer conn.rollback();
+                    try conn.exec("update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                    try conn.exec("update gui_scene_editing set post_id = ?", .{post.id});
+                    try conn.commit();
+                }
+
+                try dvui.label(
+                    @src(),
+                    "{d}. {s}",
+                    .{ post.id, post.title },
+                    .{ .id_extra = i },
                 );
             }
+
+            if (try dvui.button(@src(), "New post", .{}, .{})) {
+                try conn.transaction();
+                errdefer conn.rollback();
+                try execPrintErr(conn, "insert into post default values", .{});
+                const new_post_id = conn.lastInsertedRowId();
+                try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                try execPrintErr(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
+                try conn.commit();
+            }
         },
-        .editing => {},
-    }
 
-    var tl2 = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
-    try tl2.addText(
-        try std.fmt.allocPrint(arena, "GuiState: {}", .{gui_state}),
-        .{},
-    );
-    try tl2.addText("\n\n", .{});
-    try tl2.addText("Framerate is variable and adjusts as needed for input events and animations.", .{});
-    try tl2.addText("\n\n", .{});
-    if (vsync) {
-        try tl2.addText("Framerate is capped by vsync.", .{});
-    } else {
-        try tl2.addText("Framerate is uncapped.", .{});
-    }
-    try tl2.addText("\n\n", .{});
-    try tl2.addText("Cursor is always being set by dvui.", .{});
-    try tl2.addText("\n\n", .{});
-    if (dvui.useFreeType) {
-        try tl2.addText("Fonts are being rendered by FreeType 2.", .{});
-    } else {
-        try tl2.addText("Fonts are being rendered by stb_truetype.", .{});
-    }
-    tl2.deinit();
-
-    const label = if (dvui.Examples.show_demo_window) "Hide Demo Window" else "Show Demo Window";
-    if (try dvui.button(@src(), label, .{}, .{})) {
-        dvui.Examples.show_demo_window = !dvui.Examples.show_demo_window;
-    }
-
-    {
-        var scaler = try dvui.scale(@src(), scale_val, .{ .expand = .horizontal });
-        defer scaler.deinit();
-
-        {
-            var hbox = try dvui.box(@src(), .horizontal, .{});
-            defer hbox.deinit();
-
-            if (try dvui.button(@src(), "Zoom In", .{}, .{})) {
-                scale_val = @round(dvui.themeGet().font_body.size * scale_val + 1.0) / dvui.themeGet().font_body.size;
+        .editing => {
+            if (try dvui.button(@src(), "Back", .{}, .{})) {
+                try conn.exec("update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
             }
-
-            if (try dvui.button(@src(), "Zoom Out", .{}, .{})) {
-                scale_val = @round(dvui.themeGet().font_body.size * scale_val - 1.0) / dvui.themeGet().font_body.size;
+            if (try dvui.button(@src(), "Delete", .{}, .{})) {
+                try conn.transaction();
+                errdefer conn.rollback();
+                try execPrintErr(conn, "delete from post where id = ?", .{gui_state.editing});
+                try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
+                try conn.commit();
             }
-        }
+        },
     }
 }
