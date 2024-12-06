@@ -20,8 +20,8 @@ const DB_PATH = "Site1.wm2k";
 
 const Post = struct {
     id: i64,
-    title: []const u8,
-    content: []const u8,
+    title: []u8,
+    content: []u8,
 };
 
 const Scene = enum {
@@ -33,7 +33,9 @@ const GuiState = union(Scene) {
     listing: struct {
         posts: []Post,
     },
-    editing: i64, // post ID
+    editing: struct {
+        post: Post,
+    },
 
     fn read(conn: *zqlite.Conn, arena: std.mem.Allocator) !GuiState {
         const current_scene: Scene = @enumFromInt(
@@ -59,8 +61,24 @@ const GuiState = union(Scene) {
             },
 
             .editing => {
-                const post_id = try selectInt(conn, "select post_id from gui_scene_editing");
-                return .{ .editing = post_id };
+                var row = (conn.row(
+                    \\select p.id, p.title, p.content
+                    \\from post p
+                    \\inner join gui_scene_editing e on e.post_id = p.id
+                , .{}) catch |err| {
+                    std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+                    return err;
+                }).?;
+                defer row.deinit();
+                return .{
+                    .editing = .{
+                        .post = Post{
+                            .id = row.int(0),
+                            .title = try arena.dupe(u8, row.text(1)),
+                            .content = try arena.dupe(u8, row.text(2)),
+                        },
+                    },
+                };
             },
         }
     }
@@ -177,9 +195,14 @@ fn gui_frame(
     arena: std.mem.Allocator,
     conn: *zqlite.Conn,
 ) !void {
-    _ = arena; // Not used yet, but it doesn't hurt to have a per-frame arena
-
-    var scroll = try dvui.scrollArea(@src(), .{}, .{ .expand = .both, .color_fill = .{ .name = .fill_window } });
+    var scroll = try dvui.scrollArea(
+        @src(),
+        .{},
+        .{
+            .expand = .both,
+            .color_fill = .{ .name = .fill_window },
+        },
+    );
     defer scroll.deinit();
 
     switch (gui_state.*) {
@@ -217,8 +240,66 @@ fn gui_frame(
             }
         },
 
-        .editing => {
-            try dvui.label(@src(), "Editing post: {d}", .{gui_state.editing}, .{ .font_style = .title_1 });
+        .editing => |state| {
+            var vbox = try dvui.box(
+                @src(),
+                .vertical,
+                .{ .expand = .both },
+            );
+            defer vbox.deinit();
+
+            try dvui.label(@src(), "Editing post #{d}", .{state.post.id}, .{ .font_style = .title_1 });
+
+            var title_buf: []u8 = state.post.title;
+            var content_buf: []u8 = state.post.content;
+
+            try dvui.label(@src(), "Title:", .{}, .{});
+            var title_entry = try dvui.textEntry(
+                @src(),
+                .{
+                    .text = .{
+                        .buffer_dynamic = .{
+                            .backing = &title_buf,
+                            .allocator = arena,
+                        },
+                    },
+                },
+                .{ .expand = .horizontal },
+            );
+            if (title_entry.text_changed) {
+                try execPrintErr(
+                    conn,
+                    "update post set title=? where id=?",
+                    .{ title_entry.getText(), state.post.id },
+                );
+            }
+            title_entry.deinit();
+
+            try dvui.label(@src(), "Content:", .{}, .{});
+            var content_entry = try dvui.textEntry(
+                @src(),
+                .{
+                    .multiline = true,
+                    .text = .{
+                        .buffer_dynamic = .{
+                            .backing = &content_buf,
+                            .allocator = arena,
+                        },
+                    },
+                },
+                .{
+                    .expand = .both,
+                    .min_size_content = .{ .h = 80 },
+                },
+            );
+            if (content_entry.text_changed) {
+                try execPrintErr(
+                    conn,
+                    "update post set content=? where id=?",
+                    .{ content_entry.getText(), state.post.id },
+                );
+            }
+            content_entry.deinit();
 
             {
                 var hbox = try dvui.box(@src(), .horizontal, .{});
@@ -230,7 +311,7 @@ fn gui_frame(
                 if (try dvui.button(@src(), "Delete", .{}, .{})) {
                     try conn.transaction();
                     errdefer conn.rollback();
-                    try execPrintErr(conn, "delete from post where id = ?", .{gui_state.editing});
+                    try execPrintErr(conn, "delete from post where id = ?", .{state.post.id});
                     try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
                     try conn.commit();
                 }
