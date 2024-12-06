@@ -177,41 +177,25 @@ fn gui_frame(
     arena: std.mem.Allocator,
     conn: *zqlite.Conn,
 ) !void {
-    {
-        var m = try dvui.menu(@src(), .horizontal, .{ .background = true, .expand = .horizontal });
-        defer m.deinit();
-
-        if (try dvui.menuItemLabel(@src(), "File", .{ .submenu = true }, .{ .expand = .none })) |r| {
-            var fw = try dvui.floatingMenu(@src(), dvui.Rect.fromPoint(dvui.Point{ .x = r.x, .y = r.y + r.h }), .{});
-            defer fw.deinit();
-
-            if (try dvui.menuItemLabel(@src(), "Close Menu", .{}, .{}) != null) {
-                m.close();
-            }
-        }
-
-        if (try dvui.menuItemLabel(@src(), "Edit", .{ .submenu = true }, .{ .expand = .none })) |r| {
-            var fw = try dvui.floatingMenu(@src(), dvui.Rect.fromPoint(dvui.Point{ .x = r.x, .y = r.y + r.h }), .{});
-            defer fw.deinit();
-            _ = try dvui.menuItemLabel(@src(), "Dummy", .{}, .{ .expand = .horizontal });
-            _ = try dvui.menuItemLabel(@src(), "Dummy Long", .{}, .{ .expand = .horizontal });
-            _ = try dvui.menuItemLabel(@src(), "Dummy Super Long", .{}, .{ .expand = .horizontal });
-        }
-    }
+    _ = arena; // Not used yet, but it doesn't hurt to have a per-frame arena
 
     var scroll = try dvui.scrollArea(@src(), .{}, .{ .expand = .both, .color_fill = .{ .name = .fill_window } });
     defer scroll.deinit();
 
-    var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal, .font_style = .title_1 });
-    const header = switch (gui_state.*) {
-        GuiState.listing => "Posts",
-        GuiState.editing => |post_id| try std.fmt.allocPrint(arena, "Editing Post: {d}", .{post_id}),
-    };
-    try tl.addText(header, .{});
-    tl.deinit();
-
     switch (gui_state.*) {
         .listing => |state| {
+            try dvui.label(@src(), "Posts", .{}, .{ .font_style = .title_1 });
+
+            if (try dvui.button(@src(), "New post", .{}, .{})) {
+                try conn.transaction();
+                errdefer conn.rollback();
+                try execPrintErr(conn, "insert into post default values", .{});
+                const new_post_id = conn.lastInsertedRowId();
+                try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                try execPrintErr(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
+                try conn.commit();
+            }
+
             for (state.posts, 0..) |post, i| {
                 var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
                 defer hbox.deinit();
@@ -228,31 +212,28 @@ fn gui_frame(
                     @src(),
                     "{d}. {s}",
                     .{ post.id, post.title },
-                    .{ .id_extra = i },
+                    .{ .id_extra = i, .gravity_y = 0.5 },
                 );
-            }
-
-            if (try dvui.button(@src(), "New post", .{}, .{})) {
-                try conn.transaction();
-                errdefer conn.rollback();
-                try execPrintErr(conn, "insert into post default values", .{});
-                const new_post_id = conn.lastInsertedRowId();
-                try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
-                try execPrintErr(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
-                try conn.commit();
             }
         },
 
         .editing => {
-            if (try dvui.button(@src(), "Back", .{}, .{})) {
-                try conn.exec("update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
-            }
-            if (try dvui.button(@src(), "Delete", .{}, .{})) {
-                try conn.transaction();
-                errdefer conn.rollback();
-                try execPrintErr(conn, "delete from post where id = ?", .{gui_state.editing});
-                try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
-                try conn.commit();
+            try dvui.label(@src(), "Editing post: {d}", .{gui_state.editing}, .{ .font_style = .title_1 });
+
+            {
+                var hbox = try dvui.box(@src(), .horizontal, .{});
+                defer hbox.deinit();
+
+                if (try dvui.button(@src(), "Back", .{}, .{})) {
+                    try conn.exec("update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
+                }
+                if (try dvui.button(@src(), "Delete", .{}, .{})) {
+                    try conn.transaction();
+                    errdefer conn.rollback();
+                    try execPrintErr(conn, "delete from post where id = ?", .{gui_state.editing});
+                    try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
+                    try conn.commit();
+                }
             }
         },
     }
