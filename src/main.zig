@@ -1,17 +1,11 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
-
-const zqlite_utils = @import("zqlite_utils.zig");
-const selectInt = zqlite_utils.selectInt;
-const execPrintErr = zqlite_utils.execPrintErr;
-
+const sql = @import("sql.zig");
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
 }
 const Backend = dvui.backend;
-
-var g_backend: ?Backend = null;
 
 const DB_PATH = "Site1.wm2k";
 
@@ -34,15 +28,15 @@ const GuiState = union(Scene) {
         post: Post,
     },
 
-    fn read(conn: *zqlite.Conn, arena: std.mem.Allocator) !GuiState {
+    fn read(conn: zqlite.Conn, arena: std.mem.Allocator) !GuiState {
         const current_scene: Scene = @enumFromInt(
-            try selectInt(conn, "select current_scene from gui_scene"),
+            try sql.selectInt(conn, "select current_scene from gui_scene"),
         );
 
         switch (current_scene) {
             .listing => {
                 var posts = std.ArrayList(Post).init(arena);
-                var rows = try conn.rows("SELECT id, title, content FROM post ORDER BY id DESC", .{});
+                var rows = try conn.rows("select id, title, content from post order by id desc", .{});
                 defer rows.deinit();
                 while (rows.next()) |row| {
                     const post = Post{
@@ -52,20 +46,20 @@ const GuiState = union(Scene) {
                     };
                     try posts.append(post);
                 }
-                if (rows.err) |err| return err;
+                if (rows.err) |err| {
+                    std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+                    return err;
+                }
 
                 return .{ .listing = .{ .posts = posts.items } };
             },
 
             .editing => {
-                var row = (conn.row(
+                var row = try sql.selectRow(conn,
                     \\select p.id, p.title, p.content
                     \\from post p
                     \\inner join gui_scene_editing e on e.post_id = p.id
-                , .{}) catch |err| {
-                    std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
-                    return err;
-                }).?;
+                , .{});
                 defer row.deinit();
                 return .{
                     .editing = .{
@@ -94,7 +88,6 @@ pub fn main() !void {
         .vsync = true,
         .title = "WebMaker2000",
     });
-    g_backend = backend;
     defer backend.deinit();
 
     // init dvui Window (maps onto a single OS window)
@@ -102,44 +95,43 @@ pub fn main() !void {
     defer win.deinit();
 
     // init sqlite connection
-    const flags = zqlite.OpenFlags.Create | zqlite.OpenFlags.ReadWrite | zqlite.OpenFlags.EXResCode;
+    const flags = zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
     var conn = try zqlite.open(DB_PATH, flags);
-    try conn.execNoArgs("PRAGMA foreign_keys = ON;");
-    try conn.execNoArgs(
-        \\CREATE TABLE post (
-        \\  id INTEGER PRIMARY KEY,
-        \\  title TEXT,
-        \\  content TEXT
+    try sql.execNoArgs(conn, "pragma foreign_keys = on");
+    try sql.execNoArgs(conn,
+        \\create table post (
+        \\  id integer primary key,
+        \\  title text,
+        \\  content text
         \\);
     );
-    try conn.execNoArgs(
+    try sql.execNoArgs(
+        conn,
         std.fmt.comptimePrint(
-            \\CREATE TABLE gui_scene (
-            \\  id INTEGER PRIMARY KEY CHECK(id = 0) DEFAULT 0,
-            \\  current_scene INTEGER DEFAULT {d}
+            \\create table gui_scene (
+            \\  id integer primary key check(id = 0) default 0,
+            \\  current_scene integer default {d}
             \\);
-        ,
-            .{@intFromEnum(Scene.listing)},
-        ),
+        , .{@intFromEnum(Scene.listing)}),
     );
-    conn.execNoArgs("insert into gui_scene (id) values (0)") catch {
-        std.debug.print(">> {s}", .{conn.lastError()});
-    };
-    try conn.execNoArgs(
+    try sql.execNoArgs(conn, "insert into gui_scene (id) values (0)");
+    try sql.execNoArgs(conn,
         \\create table gui_scene_editing (
         \\  id integer primary key check(id = 0) default 0,
         \\  post_id integer default null,
         \\  foreign key (post_id) references post (id) on delete set null
         \\)
     );
-    try conn.execNoArgs("insert into gui_scene_editing(id) values(0)");
+    try sql.execNoArgs(conn, "insert into gui_scene_editing(id) values(0)");
 
-    try conn.exec(
-        "INSERT INTO post (title, content) VALUES (?1, ?2);",
+    try sql.exec(
+        conn,
+        "insert into post (title, content) values (?1, ?2);",
         .{ "First!", "This is my first post." },
     );
-    try conn.exec(
-        "INSERT INTO post (title, content) VALUES (?1, ?2);",
+    try sql.exec(
+        conn,
+        "insert into post (title, content) values (?1, ?2);",
         .{ "Second post", "Let's keep this going.\nShall we?" },
     );
     defer conn.close();
@@ -150,7 +142,7 @@ pub fn main() !void {
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
-        const gui_state: GuiState = try GuiState.read(&conn, arena.allocator());
+        const gui_state = try GuiState.read(conn, arena.allocator());
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -167,7 +159,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        try gui_frame(&gui_state, arena.allocator(), &conn);
+        try gui_frame(&gui_state, arena.allocator(), conn);
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -190,7 +182,7 @@ pub fn main() !void {
 fn gui_frame(
     gui_state: *const GuiState,
     arena: std.mem.Allocator,
-    conn: *zqlite.Conn,
+    conn: zqlite.Conn,
 ) !void {
     var scroll = try dvui.scrollArea(
         @src(),
@@ -209,10 +201,10 @@ fn gui_frame(
             if (try dvui.button(@src(), "New post", .{}, .{})) {
                 try conn.transaction();
                 errdefer conn.rollback();
-                try execPrintErr(conn, "insert into post default values", .{});
+                try sql.execNoArgs(conn, "insert into post default values");
                 const new_post_id = conn.lastInsertedRowId();
-                try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
-                try execPrintErr(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
+                try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
                 try conn.commit();
             }
 
@@ -223,8 +215,8 @@ fn gui_frame(
                 if (try dvui.button(@src(), "Edit", .{}, .{})) {
                     try conn.transaction();
                     errdefer conn.rollback();
-                    try conn.exec("update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
-                    try conn.exec("update gui_scene_editing set post_id = ?", .{post.id});
+                    try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                    try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post.id});
                     try conn.commit();
                 }
 
@@ -264,11 +256,7 @@ fn gui_frame(
                 .{ .expand = .horizontal },
             );
             if (title_entry.text_changed) {
-                try execPrintErr(
-                    conn,
-                    "update post set title=? where id=?",
-                    .{ title_entry.getText(), state.post.id },
-                );
+                try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
             }
             title_entry.deinit();
 
@@ -290,11 +278,7 @@ fn gui_frame(
                 },
             );
             if (content_entry.text_changed) {
-                try execPrintErr(
-                    conn,
-                    "update post set content=? where id=?",
-                    .{ content_entry.getText(), state.post.id },
-                );
+                try sql.exec(conn, "update post set content=? where id=?", .{ content_entry.getText(), state.post.id });
             }
             content_entry.deinit();
 
@@ -303,13 +287,13 @@ fn gui_frame(
                 defer hbox.deinit();
 
                 if (try dvui.button(@src(), "Back", .{}, .{})) {
-                    try conn.exec("update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
+                    try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
                 }
                 if (try dvui.button(@src(), "Delete", .{}, .{})) {
                     try conn.transaction();
                     errdefer conn.rollback();
-                    try execPrintErr(conn, "delete from post where id = ?", .{state.post.id});
-                    try execPrintErr(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.listing)});
+                    try sql.exec(conn, "delete from post where id=?", .{state.post.id});
+                    try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
                     try conn.commit();
                 }
             }
