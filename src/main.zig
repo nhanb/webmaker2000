@@ -11,9 +11,6 @@ comptime {
 }
 const Backend = dvui.backend;
 
-const vsync = true;
-var scale_val: f32 = 1.0;
-
 var g_backend: ?Backend = null;
 
 const DB_PATH = "Site1.wm2k";
@@ -94,7 +91,7 @@ pub fn main() !void {
         .allocator = gpa,
         .size = .{ .w = 800.0, .h = 600.0 },
         .min_size = .{ .w = 250.0, .h = 350.0 },
-        .vsync = vsync,
+        .vsync = true,
         .title = "WebMaker2000",
     });
     g_backend = backend;
