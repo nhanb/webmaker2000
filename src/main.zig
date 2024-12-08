@@ -7,6 +7,7 @@ comptime {
 }
 const Backend = dvui.backend;
 
+// TODO: read path from argv instead
 const DB_PATH = "Site1.wm2k";
 
 const Post = struct {
@@ -20,12 +21,17 @@ const Scene = enum {
     editing,
 };
 
+const Modal = enum {
+    confirm_post_deletion,
+};
+
 const GuiState = union(Scene) {
     listing: struct {
         posts: []Post,
     },
     editing: struct {
         post: Post,
+        show_confirm_delete: bool,
     },
 
     fn read(conn: zqlite.Conn, arena: std.mem.Allocator) !GuiState {
@@ -55,12 +61,21 @@ const GuiState = union(Scene) {
             },
 
             .editing => {
-                var row = try sql.selectRow(conn,
+                var row = (try sql.selectRow(conn,
                     \\select p.id, p.title, p.content
                     \\from post p
                     \\inner join gui_scene_editing e on e.post_id = p.id
-                , .{});
+                , .{})).?;
                 defer row.deinit();
+
+                const show_confirm_delete = (try sql.selectInt(
+                    conn,
+                    std.fmt.comptimePrint(
+                        "select exists (select * from gui_modal where kind = {d})",
+                        .{@intFromEnum(Modal.confirm_post_deletion)},
+                    ),
+                ) == 1);
+
                 return .{
                     .editing = .{
                         .post = Post{
@@ -68,6 +83,7 @@ const GuiState = union(Scene) {
                             .title = try arena.dupe(u8, row.text(1)),
                             .content = try arena.dupe(u8, row.text(2)),
                         },
+                        .show_confirm_delete = show_confirm_delete,
                     },
                 };
             },
@@ -111,6 +127,7 @@ pub fn main() !void {
 
     if (is_new_db) {
         try sql.execNoArgs(conn, "pragma foreign_keys = on");
+
         try sql.execNoArgs(conn,
             \\create table post (
             \\  id integer primary key,
@@ -118,6 +135,7 @@ pub fn main() !void {
             \\  content text
             \\);
         );
+
         try sql.execNoArgs(
             conn,
             std.fmt.comptimePrint(
@@ -128,6 +146,7 @@ pub fn main() !void {
             , .{@intFromEnum(Scene.listing)}),
         );
         try sql.execNoArgs(conn, "insert into gui_scene (id) values (0)");
+
         try sql.execNoArgs(conn,
             \\create table gui_scene_editing (
             \\  id integer primary key check(id = 0) default 0,
@@ -136,6 +155,13 @@ pub fn main() !void {
             \\)
         );
         try sql.execNoArgs(conn, "insert into gui_scene_editing(id) values(0)");
+
+        try sql.execNoArgs(conn,
+            \\create table gui_modal (
+            \\  id integer primary key check(id = 1),
+            \\  kind integer not null
+            \\)
+        );
 
         try sql.exec(
             conn,
@@ -308,12 +334,50 @@ fn gui_frame(
                 if (try dvui.button(@src(), "Back", .{}, .{})) {
                     try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
                 }
+
                 if (try dvui.button(@src(), "Delete", .{}, .{})) {
-                    try conn.transaction();
-                    errdefer conn.rollback();
-                    try sql.exec(conn, "delete from post where id=?", .{state.post.id});
-                    try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
-                    try conn.commit();
+                    try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                        "insert into gui_modal(kind) values({d})",
+                        .{@intFromEnum(Modal.confirm_post_deletion)},
+                    ));
+                }
+            }
+
+            // Post deletion confirmation modal:
+            if (state.show_confirm_delete) {
+                var modal = try dvui.floatingWindow(
+                    @src(),
+                    .{ .modal = true },
+                    .{ .max_size_content = .{ .w = 500 } },
+                );
+                defer modal.deinit();
+
+                try dvui.windowHeader("Confirm deletion", "", null);
+                try dvui.label(@src(), "Are you sure you want to delete this post?", .{}, .{});
+
+                {
+                    _ = try dvui.spacer(@src(), .{}, .{ .expand = .vertical });
+                    var hbox = try dvui.box(@src(), .horizontal, .{ .gravity_x = 1.0 });
+                    defer hbox.deinit();
+
+                    if (try dvui.button(@src(), "Yes", .{}, .{})) {
+                        try conn.transaction();
+                        errdefer conn.rollback();
+                        try sql.exec(conn, "delete from post where id=?", .{state.post.id});
+                        try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
+                        try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                            "delete from gui_modal where kind={d}",
+                            .{@intFromEnum(Modal.confirm_post_deletion)},
+                        ));
+                        try conn.commit();
+                    }
+
+                    if (try dvui.button(@src(), "No", .{}, .{})) {
+                        try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                            "delete from gui_modal where kind={d}",
+                            .{@intFromEnum(Modal.confirm_post_deletion)},
+                        ));
+                    }
                 }
             }
         },

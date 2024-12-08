@@ -1,4 +1,4 @@
-Zig 0.13, assuming sdl2 is installed on system:
+Zig 0.13, assuming sdl2 & sqlite3 are installed on system:
 
 ```sh
 zig build run -fsys=sdl2

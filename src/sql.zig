@@ -18,11 +18,11 @@ pub fn execNoArgs(conn: zqlite.Conn, sql: [*:0]const u8) !void {
     };
 }
 
-pub fn selectRow(conn: zqlite.Conn, sql: []const u8, args: anytype) !zqlite.Row {
+pub fn selectRow(conn: zqlite.Conn, sql: []const u8, args: anytype) !?zqlite.Row {
     return (conn.row(sql, args) catch |err| {
         std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
         return err;
-    }).?;
+    });
 }
 
 pub fn selectInt(conn: zqlite.Conn, sql: []const u8) !i64 {
