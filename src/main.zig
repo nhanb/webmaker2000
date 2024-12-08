@@ -94,51 +94,71 @@ pub fn main() !void {
     var win = try dvui.Window.init(@src(), gpa, backend.backend(), .{});
     defer win.deinit();
 
-    // init sqlite connection
-    const flags = zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
-    var conn = try zqlite.open(DB_PATH, flags);
-    try sql.execNoArgs(conn, "pragma foreign_keys = on");
-    try sql.execNoArgs(conn,
-        \\create table post (
-        \\  id integer primary key,
-        \\  title text,
-        \\  content text
-        \\);
-    );
-    try sql.execNoArgs(
-        conn,
-        std.fmt.comptimePrint(
-            \\create table gui_scene (
-            \\  id integer primary key check(id = 0) default 0,
-            \\  current_scene integer default {d}
-            \\);
-        , .{@intFromEnum(Scene.listing)}),
-    );
-    try sql.execNoArgs(conn, "insert into gui_scene (id) values (0)");
-    try sql.execNoArgs(conn,
-        \\create table gui_scene_editing (
-        \\  id integer primary key check(id = 0) default 0,
-        \\  post_id integer default null,
-        \\  foreign key (post_id) references post (id) on delete set null
-        \\)
-    );
-    try sql.execNoArgs(conn, "insert into gui_scene_editing(id) values(0)");
+    // Attempt to open db file at `path`.
+    // If it doesn't exist, create and initialize its schema.
 
-    try sql.exec(
-        conn,
-        "insert into post (title, content) values (?1, ?2);",
-        .{ "First!", "This is my first post." },
-    );
-    try sql.exec(
-        conn,
-        "insert into post (title, content) values (?1, ?2);",
-        .{ "Second post", "Let's keep this going.\nShall we?" },
-    );
+    var is_new_db = false;
+    const conn = zqlite.open(DB_PATH, zqlite.OpenFlags.EXResCode) catch |err| blk: {
+        if (err == error.CantOpen) {
+            is_new_db = true;
+            break :blk try zqlite.open(
+                DB_PATH,
+                zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.Create,
+            );
+        }
+        return err;
+    };
+
+    if (is_new_db) {
+        try sql.execNoArgs(conn, "pragma foreign_keys = on");
+        try sql.execNoArgs(conn,
+            \\create table post (
+            \\  id integer primary key,
+            \\  title text,
+            \\  content text
+            \\);
+        );
+        try sql.execNoArgs(
+            conn,
+            std.fmt.comptimePrint(
+                \\create table gui_scene (
+                \\  id integer primary key check(id = 0) default 0,
+                \\  current_scene integer default {d}
+                \\);
+            , .{@intFromEnum(Scene.listing)}),
+        );
+        try sql.execNoArgs(conn, "insert into gui_scene (id) values (0)");
+        try sql.execNoArgs(conn,
+            \\create table gui_scene_editing (
+            \\  id integer primary key check(id = 0) default 0,
+            \\  post_id integer default null,
+            \\  foreign key (post_id) references post (id) on delete set null
+            \\)
+        );
+        try sql.execNoArgs(conn, "insert into gui_scene_editing(id) values(0)");
+
+        try sql.exec(
+            conn,
+            "insert into post (title, content) values (?1, ?2);",
+            .{ "First!", "This is my first post." },
+        );
+        try sql.exec(
+            conn,
+            "insert into post (title, content) values (?1, ?2);",
+            .{ "Second post", "Let's keep this going.\nShall we?" },
+        );
+    }
+
     defer conn.close();
 
+    // Create arena that is reset every frame:
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
+    // In each frame:
+    // - make sure arena is reset
+    // - read gui_state fresh from database
+    // - (the is are dvui boilerplate)
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
@@ -178,7 +198,6 @@ pub fn main() !void {
     }
 }
 
-// both dvui and SDL drawing
 fn gui_frame(
     gui_state: *const GuiState,
     arena: std.mem.Allocator,
