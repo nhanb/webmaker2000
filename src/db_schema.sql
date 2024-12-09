@@ -1,6 +1,5 @@
-begin;
-
 pragma foreign_keys = on;
+pragma user_version = 1;
 
 create table post (
     id integer primary key,
@@ -26,11 +25,19 @@ create table gui_modal (
     kind integer not null
 );
 
+create table undo_stack (
+    id integer primary key autoincrement,
+    sql text not null check (sql <> '')
+);
+
+create table redo_stack (
+    id integer primary key autoincrement,
+    sql text not null check (sql <> '')
+);
+
 -- TODO remove seed data
 insert into post (title, content) values
     ('First!', 'This is my first post.'),
     ('Second post', 'Let''s keep this going.
 Shall we?')
 ;
-
-commit;

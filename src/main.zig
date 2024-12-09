@@ -2,6 +2,7 @@ const std = @import("std");
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
+const db = @import("db.zig");
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
 }
@@ -42,7 +43,7 @@ const GuiState = union(Scene) {
         switch (current_scene) {
             .listing => {
                 var posts = std.ArrayList(Post).init(arena);
-                var rows = try conn.rows("select id, title, content from post order by id desc", .{});
+                var rows = try sql.rows(conn, "select id, title, content from post order by id desc", .{});
                 defer rows.deinit();
                 while (rows.next()) |row| {
                     const post = Post{
@@ -52,10 +53,7 @@ const GuiState = union(Scene) {
                     };
                     try posts.append(post);
                 }
-                if (rows.err) |err| {
-                    std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
-                    return err;
-                }
+                try sql.check(rows.err, conn);
 
                 return .{ .listing = .{ .posts = posts.items } };
             },
@@ -128,7 +126,13 @@ pub fn main() !void {
     try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
     if (is_new_db) {
+        try sql.execNoArgs(conn, "begin exclusive");
         try sql.execNoArgs(conn, @embedFile("db_schema.sql"));
+        try db.registerUndo(conn, gpa);
+        try sql.execNoArgs(conn, "commit");
+    } else {
+        // TODO: read user_version pragma to check if the db was initialized
+        // correctly. If not, abort with error message somehow.
     }
 
     defer conn.close();
@@ -194,6 +198,23 @@ fn gui_frame(
         },
     );
     defer scroll.deinit();
+
+    {
+        var toolbar = try dvui.box(
+            @src(),
+            .horizontal,
+            .{ .expand = .horizontal },
+        );
+        defer toolbar.deinit();
+
+        if (try dvui.button(@src(), "Undo", .{}, .{})) {
+            try db.undo(conn);
+        }
+
+        if (try dvui.button(@src(), "Redo", .{}, .{})) {
+            // TODO
+        }
+    }
 
     switch (gui_state.*) {
         .listing => |state| {
