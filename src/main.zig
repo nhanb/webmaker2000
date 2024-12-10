@@ -39,7 +39,8 @@ const Modal = enum {
 const GuiState = struct {
     scene: SceneState,
     history: struct {
-        undos: []history.UndoBarrier,
+        undos: []history.Barrier,
+        redos: []history.Barrier,
     },
 
     fn read(conn: zqlite.Conn, arena: std.mem.Allocator) !GuiState {
@@ -97,7 +98,8 @@ const GuiState = struct {
         return GuiState{
             .scene = scene,
             .history = .{
-                .undos = try history.getUndoBarriers(conn, arena),
+                .undos = try history.getBarriers(history.Undo, conn, arena),
+                .redos = try history.getBarriers(history.Redo, conn, arena),
             },
         };
     }
@@ -142,7 +144,7 @@ pub fn main() !void {
     if (is_new_db) {
         try sql.execNoArgs(conn, "begin exclusive");
         try sql.execNoArgs(conn, @embedFile("db_schema.sql"));
-        try history.registerUndo(conn, gpa);
+        try history.registerTriggers(history.Undo, conn, gpa);
         try sql.execNoArgs(conn, "commit");
     } else {
         // TODO: read user_version pragma to check if the db was initialized
@@ -223,7 +225,7 @@ fn gui_frame(
 
         if (try dvui.button(@src(), "Undo", .{}, .{})) {
             if (gui_state.history.undos.len > 0) {
-                try history.undo(conn, gui_state.history.undos);
+                try history.undo(history.Undo, conn, gui_state.history.undos);
             }
         }
 
@@ -295,7 +297,7 @@ fn gui_frame(
             );
             if (title_entry.text_changed) {
                 try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
-                try history.addUndoBarrier(conn, "Update post title");
+                try history.addBarrier(history.Undo, conn, "Update post title");
             }
             title_entry.deinit();
 

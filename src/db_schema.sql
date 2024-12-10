@@ -29,11 +29,22 @@ create table history_undo (
     id integer primary key autoincrement,
     statement text not null check (statement <> '')
 );
-create table history_undo_barrier (
+create table history_barrier_undo (
     id integer primary key autoincrement,
-    history_undo_id integer unique not null,
+    history_id integer unique not null,
     description text not null check (description <> ''),
-    foreign key (history_undo_id) references history_undo (id) on delete cascade
+    foreign key (history_id) references history_undo (id) on delete cascade
+);
+
+create table history_redo (
+    id integer primary key autoincrement,
+    statement text not null check (statement <> '')
+);
+create table history_barrier_redo (
+    id integer primary key autoincrement,
+    history_id integer unique not null,
+    description text not null check (description <> ''),
+    foreign key (history_id) references history_redo (id) on delete cascade
 );
 
 -- TODO remove seed data
