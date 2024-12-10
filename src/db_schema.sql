@@ -27,12 +27,12 @@ create table gui_modal (
 
 create table undo_stack (
     id integer primary key autoincrement,
-    sql text not null check (sql <> '')
+    statement text not null check (statement <> '')
 );
 
 create table redo_stack (
     id integer primary key autoincrement,
-    sql text not null check (sql <> '')
+    statement text not null check (statement <> '')
 );
 
 -- TODO remove seed data

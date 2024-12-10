@@ -3,7 +3,16 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const print = std.debug.print;
 
-const UNDO_TABLES = &.{
+const BARRIER_HEADER = "--BARRIER ";
+
+// Represents a range of undo_stack db rows that correspond to a barrier
+pub const Record = struct {
+    high_id: i64, // barrier row
+    low_id: i64, // last row before the next barrier
+    description: []const u8, // extracted from the barrier row
+};
+
+const HISTORY_TABLES = &.{
     "post",
     "gui_scene",
     "gui_scene_editing",
@@ -14,13 +23,13 @@ pub fn registerUndo(
     conn: zqlite.Conn,
     gpa: std.mem.Allocator,
 ) !void {
-    print("Registering undo for {d} tables:\n", .{UNDO_TABLES.len});
+    print("Registering undo for {d} tables:\n", .{HISTORY_TABLES.len});
 
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
 
-    inline for (UNDO_TABLES) |table| {
+    inline for (HISTORY_TABLES) |table| {
         print("- table {s}\n", .{table});
 
         // First colect this table's column names
@@ -45,7 +54,7 @@ pub fn registerUndo(
         // INSERT:
         const insert_trigger = std.fmt.comptimePrint(
             \\CREATE TRIGGER undo_{s}_insert AFTER INSERT ON {s} BEGIN
-            \\  INSERT INTO undo_stack (sql) VALUES (
+            \\  INSERT INTO undo_stack (statement) VALUES (
             \\      'DELETE FROM {s} WHERE id=' || new.id
             \\  );
             \\END;
@@ -72,7 +81,7 @@ pub fn registerUndo(
         const update_trigger = try std.fmt.allocPrint(
             arena,
             \\CREATE TRIGGER undo_{s}_update AFTER UPDATE ON {s} BEGIN
-            \\  INSERT INTO undo_stack (sql) VALUES (
+            \\  INSERT INTO undo_stack (statement) VALUES (
             \\      'UPDATE {s} SET {s} WHERE id=' || old.id
             \\  );
             \\END;
@@ -102,7 +111,7 @@ pub fn registerUndo(
         const delete_trigger = try std.fmt.allocPrint(
             arena,
             \\CREATE TRIGGER undo_{s}_delete AFTER DELETE ON {s} BEGIN
-            \\  INSERT INTO undo_stack (sql) VALUES (
+            \\  INSERT INTO undo_stack (statement) VALUES (
             \\      'INSERT INTO {s} ({s}) VALUES ({s})'
             \\  );
             \\END;
@@ -119,25 +128,22 @@ pub fn registerUndo(
     }
 }
 
-pub fn undo(conn: zqlite.Conn) !void {
+pub fn undo(conn: zqlite.Conn, record: Record) !void {
+    try sql.execNoArgs(conn, "begin");
+    errdefer conn.rollback();
+
     var undo_rows = try sql.rows(
         conn,
-        \\select id, sql from undo_stack
-        \\where id >= coalesce(
-        \\  (
-        \\    select id from undo_stack
-        \\    where sql = '--BARRIER'
-        \\    order by id desc limit 1
-        \\  ),
-        \\  0
-        \\)
+        \\select id, statement from undo_stack
+        \\where ?1 <= id and id <= ?2
         \\order by id desc
     ,
-        .{},
+        .{
+            record.low_id,
+            record.high_id - 1, // exclude barrier row
+        },
     );
     defer undo_rows.deinit();
-
-    try sql.execNoArgs(conn, "begin");
 
     while (undo_rows.next()) |row| {
         const id = row.text(0);
@@ -154,5 +160,45 @@ pub fn undo(conn: zqlite.Conn) !void {
     }
     try sql.check(undo_rows.err, conn);
 
+    try sql.exec(conn, "delete from undo_stack where id=?", .{record.high_id});
+
     try sql.execNoArgs(conn, "commit");
+}
+
+pub fn getUndoStack(conn: zqlite.Conn, arena: std.mem.Allocator) ![]Record {
+    var list = std.ArrayList(Record).init(arena);
+    // A valid undo stack must either be empty or have a barrier at the top.
+    // In other words, every action pushed to history must end with a barrier.
+
+    var rows = try sql.rows(
+        conn,
+        "select id, statement from undo_stack order by id",
+        .{},
+    );
+    defer rows.deinit();
+
+    var low_id: i64 = 0;
+    while (rows.next()) |row| {
+        const id = row.int(0);
+        const statement = row.text(1);
+
+        if (std.mem.startsWith(u8, statement, BARRIER_HEADER)) {
+            try list.append(.{
+                .low_id = low_id,
+                .high_id = id,
+                .description = statement[BARRIER_HEADER.len..],
+            });
+            low_id = id + 1;
+        }
+    }
+
+    return list.items;
+}
+
+pub fn addBarrier(conn: zqlite.Conn, description: []const u8) !void {
+    try sql.exec(
+        conn,
+        "insert into undo_stack (statement) values (? || ?)",
+        .{ BARRIER_HEADER, description },
+    );
 }

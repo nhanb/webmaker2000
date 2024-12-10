@@ -2,7 +2,7 @@ const std = @import("std");
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
-const db = @import("db.zig");
+const history = @import("history.zig");
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
 }
@@ -22,11 +22,7 @@ const Scene = enum {
     editing,
 };
 
-const Modal = enum {
-    confirm_post_deletion,
-};
-
-const GuiState = union(Scene) {
+const SceneState = union(Scene) {
     listing: struct {
         posts: []Post,
     },
@@ -34,14 +30,25 @@ const GuiState = union(Scene) {
         post: Post,
         show_confirm_delete: bool,
     },
+};
+
+const Modal = enum {
+    confirm_post_deletion,
+};
+
+const GuiState = struct {
+    scene: SceneState,
+    history: struct {
+        undos: []history.Record,
+    },
 
     fn read(conn: zqlite.Conn, arena: std.mem.Allocator) !GuiState {
         const current_scene: Scene = @enumFromInt(
             try sql.selectInt(conn, "select current_scene from gui_scene"),
         );
 
-        switch (current_scene) {
-            .listing => {
+        const scene: SceneState = switch (current_scene) {
+            .listing => blk: {
                 var posts = std.ArrayList(Post).init(arena);
                 var rows = try sql.rows(conn, "select id, title, content from post order by id desc", .{});
                 defer rows.deinit();
@@ -55,10 +62,10 @@ const GuiState = union(Scene) {
                 }
                 try sql.check(rows.err, conn);
 
-                return .{ .listing = .{ .posts = posts.items } };
+                break :blk .{ .listing = .{ .posts = posts.items } };
             },
 
-            .editing => {
+            .editing => blk: {
                 var row = (try sql.selectRow(conn,
                     \\select p.id, p.title, p.content
                     \\from post p
@@ -74,7 +81,7 @@ const GuiState = union(Scene) {
                     ),
                 ) == 1);
 
-                return .{
+                break :blk .{
                     .editing = .{
                         .post = Post{
                             .id = row.int(0),
@@ -85,7 +92,14 @@ const GuiState = union(Scene) {
                     },
                 };
             },
-        }
+        };
+
+        return GuiState{
+            .scene = scene,
+            .history = .{
+                .undos = try history.getUndoStack(conn, arena),
+            },
+        };
     }
 };
 
@@ -128,7 +142,7 @@ pub fn main() !void {
     if (is_new_db) {
         try sql.execNoArgs(conn, "begin exclusive");
         try sql.execNoArgs(conn, @embedFile("db_schema.sql"));
-        try db.registerUndo(conn, gpa);
+        try history.registerUndo(conn, gpa);
         try sql.execNoArgs(conn, "commit");
     } else {
         // TODO: read user_version pragma to check if the db was initialized
@@ -149,6 +163,13 @@ pub fn main() !void {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
         const gui_state = try GuiState.read(conn, arena.allocator());
+
+        for (gui_state.history.undos) |undo| {
+            std.debug.print(
+                ">> undo: {d}-{d}: {s}\n",
+                .{ undo.low_id, undo.high_id, undo.description },
+            );
+        }
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -208,7 +229,12 @@ fn gui_frame(
         defer toolbar.deinit();
 
         if (try dvui.button(@src(), "Undo", .{}, .{})) {
-            try db.undo(conn);
+            if (gui_state.history.undos.len > 0) {
+                try history.undo(
+                    conn,
+                    gui_state.history.undos[gui_state.history.undos.len - 1],
+                );
+            }
         }
 
         if (try dvui.button(@src(), "Redo", .{}, .{})) {
@@ -216,7 +242,7 @@ fn gui_frame(
         }
     }
 
-    switch (gui_state.*) {
+    switch (gui_state.scene) {
         .listing => |state| {
             try dvui.label(@src(), "Posts", .{}, .{ .font_style = .title_1 });
 
@@ -279,6 +305,7 @@ fn gui_frame(
             );
             if (title_entry.text_changed) {
                 try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
+                try history.addBarrier(conn, "Update post title");
             }
             title_entry.deinit();
 
