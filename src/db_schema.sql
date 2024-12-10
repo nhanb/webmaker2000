@@ -25,14 +25,15 @@ create table gui_modal (
     kind integer not null
 );
 
-create table undo_stack (
+create table history_undo (
     id integer primary key autoincrement,
     statement text not null check (statement <> '')
 );
-
-create table redo_stack (
+create table history_undo_barrier (
     id integer primary key autoincrement,
-    statement text not null check (statement <> '')
+    history_undo_id integer unique not null,
+    description text not null check (description <> ''),
+    foreign key (history_undo_id) references history_undo (id) on delete cascade
 );
 
 -- TODO remove seed data

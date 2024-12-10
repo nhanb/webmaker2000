@@ -39,7 +39,7 @@ const Modal = enum {
 const GuiState = struct {
     scene: SceneState,
     history: struct {
-        undos: []history.Record,
+        undos: []history.UndoBarrier,
     },
 
     fn read(conn: zqlite.Conn, arena: std.mem.Allocator) !GuiState {
@@ -97,7 +97,7 @@ const GuiState = struct {
         return GuiState{
             .scene = scene,
             .history = .{
-                .undos = try history.getUndoStack(conn, arena),
+                .undos = try history.getUndoBarriers(conn, arena),
             },
         };
     }
@@ -164,13 +164,6 @@ pub fn main() !void {
 
         const gui_state = try GuiState.read(conn, arena.allocator());
 
-        for (gui_state.history.undos) |undo| {
-            std.debug.print(
-                ">> undo: {d}-{d}: {s}\n",
-                .{ undo.low_id, undo.high_id, undo.description },
-            );
-        }
-
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
 
@@ -230,10 +223,7 @@ fn gui_frame(
 
         if (try dvui.button(@src(), "Undo", .{}, .{})) {
             if (gui_state.history.undos.len > 0) {
-                try history.undo(
-                    conn,
-                    gui_state.history.undos[gui_state.history.undos.len - 1],
-                );
+                try history.undo(conn, gui_state.history.undos);
             }
         }
 
@@ -305,7 +295,7 @@ fn gui_frame(
             );
             if (title_entry.text_changed) {
                 try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
-                try history.addBarrier(conn, "Update post title");
+                try history.addUndoBarrier(conn, "Update post title");
             }
             title_entry.deinit();
 
