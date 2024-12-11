@@ -153,8 +153,13 @@ pub fn undo(
     conn: zqlite.Conn,
     barriers: []Barrier,
 ) !void {
+    std.debug.assert(barriers.len > 0);
+
     try sql.execNoArgs(conn, "begin");
     errdefer conn.rollback();
+
+    // First find all undo records in this barrier,
+    // execute and flag them as undone:
 
     var prev_barrier_undo_id: i64 = -1;
     if (barriers.len > 1) {
@@ -187,11 +192,24 @@ pub fn undo(
         // TODO: somehow convert and put this onto the redo stack instead.
         try sql.exec(
             conn,
-            std.fmt.comptimePrint("delete from {s} where id=?", .{htype.main_table}),
+            std.fmt.comptimePrint(
+                "update {s} set undone=true where id=?",
+                .{htype.main_table},
+            ),
             .{id},
         );
     }
     try sql.check(undo_rows.err, conn);
+
+    // Then flag the barrier itself as undone:
+    try sql.exec(
+        conn,
+        std.fmt.comptimePrint(
+            "update {s} set undone=true where id=?",
+            .{htype.barriers_table},
+        ),
+        .{barriers[0].id},
+    );
 
     try sql.execNoArgs(conn, "commit");
 }
@@ -206,9 +224,10 @@ pub fn getBarriers(
     var rows = try sql.rows(
         conn,
         std.fmt.comptimePrint(
-            "select id, history_id, description from {s} order by id desc",
-            .{htype.barriers_table},
-        ),
+            \\select id, history_id, description from {s}
+            \\where undone is false
+            \\order by id desc
+        , .{htype.barriers_table}),
         .{},
     );
     defer rows.deinit();

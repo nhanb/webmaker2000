@@ -230,7 +230,9 @@ fn gui_frame(
         }
 
         if (try dvui.button(@src(), "Redo", .{}, .{})) {
-            // TODO
+            if (gui_state.history.redos.len > 0) {
+                try history.undo(history.Redo, conn, gui_state.history.redos);
+            }
         }
     }
 
