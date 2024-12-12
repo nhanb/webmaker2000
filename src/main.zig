@@ -231,13 +231,33 @@ fn gui_frame(
         );
         defer toolbar.deinit();
 
-        if (try dvui.button(@src(), "Undo", .{}, .{})) {
+        var undo_opts = dvui.Options{};
+        if (gui_state.history.undos.len == 0) {
+            undo_opts = dvui.Options{
+                .color_text = .{ .name = .fill_press },
+                .color_text_press = .{ .name = .fill_press },
+                .color_fill_hover = .{ .name = .fill_control },
+                .color_fill_press = .{ .name = .fill_control },
+                .color_accent = .{ .name = .fill_control },
+            };
+        }
+        if (try dvui.button(@src(), "Undo", .{}, undo_opts)) {
             if (gui_state.history.undos.len > 0) {
                 try history.undo(arena, conn, gui_state.history.undos);
             }
         }
 
-        if (try dvui.button(@src(), "Redo", .{}, .{})) {
+        var redo_opts = dvui.Options{};
+        if (gui_state.history.redos.len == 0) {
+            redo_opts = dvui.Options{
+                .color_text = .{ .name = .fill_press },
+                .color_text_press = .{ .name = .fill_press },
+                .color_fill_hover = .{ .name = .fill_control },
+                .color_fill_press = .{ .name = .fill_control },
+                .color_accent = .{ .name = .fill_control },
+            };
+        }
+        if (try dvui.button(@src(), "Redo", .{}, redo_opts)) {
             if (gui_state.history.redos.len > 0) {
                 try history.redo(arena, conn, gui_state.history.redos);
             }
@@ -307,7 +327,6 @@ fn gui_frame(
             );
             if (title_entry.text_changed) {
                 if (gui_state.history.redos.len > 0) {
-                    std.debug.print(">>>>>>>>>>>>>>>>>>>>>>> FOLDING\n", .{});
                     try history.foldRedos(conn);
                 }
                 try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
