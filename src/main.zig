@@ -144,7 +144,7 @@ pub fn main() !void {
     if (is_new_db) {
         try sql.execNoArgs(conn, "begin exclusive");
         try sql.execNoArgs(conn, @embedFile("db_schema.sql"));
-        try history.registerTriggers(history.Undo, conn, gpa);
+        try history.createTriggers(history.Undo, conn, gpa);
         try sql.execNoArgs(conn, "commit");
     } else {
         // TODO: read user_version pragma to check if the db was initialized
@@ -165,6 +165,14 @@ pub fn main() !void {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
         const gui_state = try GuiState.read(conn, arena.allocator());
+
+        for (gui_state.history.undos) |undo| {
+            std.debug.print("Undo: {d}: {s}\n", .{ undo.id, undo.description });
+        }
+        for (gui_state.history.redos) |redo| {
+            std.debug.print("Redo: {d}: {s}\n", .{ redo.id, redo.description });
+        }
+        std.debug.print("---\n", .{});
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -225,13 +233,13 @@ fn gui_frame(
 
         if (try dvui.button(@src(), "Undo", .{}, .{})) {
             if (gui_state.history.undos.len > 0) {
-                try history.undo(history.Undo, conn, gui_state.history.undos);
+                try history.undo(arena, conn, gui_state.history.undos);
             }
         }
 
         if (try dvui.button(@src(), "Redo", .{}, .{})) {
             if (gui_state.history.redos.len > 0) {
-                try history.undo(history.Redo, conn, gui_state.history.redos);
+                try history.redo(arena, conn, gui_state.history.redos);
             }
         }
     }
