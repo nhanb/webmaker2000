@@ -271,10 +271,18 @@ fn gui_frame(
             if (try dvui.button(@src(), "New post", .{}, .{})) {
                 try conn.transaction();
                 errdefer conn.rollback();
+
+                if (gui_state.history.redos.len > 0) {
+                    try history.foldRedos(conn);
+                }
+
                 try sql.execNoArgs(conn, "insert into post default values");
                 const new_post_id = conn.lastInsertedRowId();
                 try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                 try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
+
+                try history.addBarrier(history.Undo, conn, "Create post");
+
                 try conn.commit();
             }
 
@@ -352,7 +360,18 @@ fn gui_frame(
                 },
             );
             if (content_entry.text_changed) {
+                try conn.transaction();
+                errdefer conn.rollback();
+
+                if (gui_state.history.redos.len > 0) {
+                    try history.foldRedos(conn);
+                }
+
                 try sql.exec(conn, "update post set content=? where id=?", .{ content_entry.getText(), state.post.id });
+
+                try history.addBarrier(history.Undo, conn, "Update post content");
+
+                try conn.commit();
             }
             content_entry.deinit();
 
@@ -392,12 +411,20 @@ fn gui_frame(
                     if (try dvui.button(@src(), "Yes", .{}, .{})) {
                         try conn.transaction();
                         errdefer conn.rollback();
+
+                        if (gui_state.history.redos.len > 0) {
+                            try history.foldRedos(conn);
+                        }
+
                         try sql.exec(conn, "delete from post where id=?", .{state.post.id});
                         try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
                         try sql.execNoArgs(conn, std.fmt.comptimePrint(
                             "delete from gui_modal where kind={d}",
                             .{@intFromEnum(Modal.confirm_post_deletion)},
                         ));
+
+                        try history.addBarrier(history.Undo, conn, "Delete post");
+
                         try conn.commit();
                     }
 

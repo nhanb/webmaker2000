@@ -196,9 +196,6 @@ pub fn undo(
 ) !void {
     std.debug.assert(barriers.len > 0);
 
-    try sql.execNoArgs(conn, "begin");
-    errdefer conn.rollback();
-
     try dropTriggers(Undo, conn, arena);
     try createTriggers(Redo, conn, arena);
 
@@ -250,8 +247,6 @@ pub fn undo(
 
     try dropTriggers(Redo, conn, arena);
     try createTriggers(Undo, conn, arena);
-
-    try sql.execNoArgs(conn, "commit");
 }
 
 pub fn getBarriers(
@@ -317,9 +312,6 @@ pub fn redo(
 
     try dropTriggers(Undo, conn, arena);
 
-    try sql.execNoArgs(conn, "begin");
-    errdefer conn.rollback();
-
     var redo_rows = try sql.rows(
         conn,
         \\select id, statement from history_redo
@@ -360,13 +352,9 @@ pub fn redo(
     );
 
     try createTriggers(Undo, conn, arena);
-    try sql.execNoArgs(conn, "commit");
 }
 
 pub fn foldRedos(conn: zqlite.Conn) !void {
-    try conn.transaction();
-    errdefer conn.rollback();
-
     try sql.execNoArgs(conn, "update history_barrier_undo set undone=false;");
 
     var redo_barriers = try sql.rows(conn, "select id, description from history_barrier_redo order by id", .{});
@@ -396,6 +384,4 @@ pub fn foldRedos(conn: zqlite.Conn) !void {
 
     try sql.execNoArgs(conn, "delete from history_redo");
     try sql.execNoArgs(conn, "delete from history_barrier_redo");
-
-    try conn.commit();
 }
