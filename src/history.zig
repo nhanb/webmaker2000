@@ -5,7 +5,6 @@ const print = std.debug.print;
 
 pub const Barrier = struct {
     id: i64,
-    undo_id: i64,
     description: []const u8, // extracted from the barrier row
 };
 
@@ -206,11 +205,6 @@ pub fn undo(
     // First find all undo records in this barrier,
     // execute and flag them as undone:
 
-    var prev_barrier_undo_id: i64 = -1;
-    if (barriers.len > 1) {
-        prev_barrier_undo_id = barriers[1].undo_id;
-    }
-
     var undo_rows = try sql.rows(
         conn,
         \\select statement from history_undo
@@ -241,10 +235,17 @@ pub fn undo(
 
     try sql.exec(
         conn,
-        \\insert into history_barrier_redo (history_id, description)
-        \\values ((select max(id) from history_redo), (select description from history_barrier_undo order by id desc limit 1))
+        \\insert into history_barrier_redo (description)
+        \\values ((select description from history_barrier_undo order by id desc limit 1))
     ,
         .{},
+    );
+
+    const redo_barrier_id = conn.lastInsertedRowId();
+    try sql.exec(
+        conn,
+        "update history_redo set barrier_id = ? where barrier_id is null",
+        .{redo_barrier_id},
     );
 
     try dropTriggers(Redo, conn, arena);
@@ -263,7 +264,7 @@ pub fn getBarriers(
     var rows = try sql.rows(
         conn,
         std.fmt.comptimePrint(
-            \\select id, history_id, description from {s}
+            \\select id, description from {s}
             \\where undone is false
             \\order by id desc
         , .{htype.barriers_table}),
@@ -274,8 +275,7 @@ pub fn getBarriers(
     while (rows.next()) |row| {
         try list.append(.{
             .id = row.int(0),
-            .undo_id = row.int(1),
-            .description = try arena.dupe(u8, row.text(2)),
+            .description = try arena.dupe(u8, row.text(1)),
         });
     }
     try sql.check(rows.err, conn);
@@ -291,13 +291,8 @@ pub fn addBarrier(
     try sql.exec(
         conn,
         std.fmt.comptimePrint(
-            \\insert into {s} (history_id, description)
-            \\values (
-            \\  (select max(id) from {s} limit 1),
-            \\  ?
-            \\)
-        ,
-            .{ htype.barriers_table, htype.main_table },
+            "insert into {s} (description) values (?)",
+            .{htype.barriers_table},
         ),
         .{description},
     );
@@ -325,21 +320,13 @@ pub fn redo(
     try sql.execNoArgs(conn, "begin");
     errdefer conn.rollback();
 
-    var prev_barrier_undo_id: i64 = -1;
-    if (barriers.len > 1) {
-        prev_barrier_undo_id = barriers[1].undo_id;
-    }
-
     var redo_rows = try sql.rows(
         conn,
         \\select id, statement from history_redo
-        \\where ?1 < id and id <= ?2
+        \\where barrier_id = ?
         \\order by id desc
     ,
-        .{
-            prev_barrier_undo_id,
-            barriers[0].undo_id,
-        },
+        .{barriers[0].id},
     );
     defer redo_rows.deinit();
 
@@ -374,4 +361,41 @@ pub fn redo(
 
     try createTriggers(Undo, conn, arena);
     try sql.execNoArgs(conn, "commit");
+}
+
+pub fn foldRedos(conn: zqlite.Conn) !void {
+    try conn.transaction();
+    errdefer conn.rollback();
+
+    try sql.execNoArgs(conn, "update history_barrier_undo set undone=false;");
+
+    var redo_barriers = try sql.rows(conn, "select id, description from history_barrier_redo order by id", .{});
+    defer redo_barriers.deinit();
+
+    while (redo_barriers.next()) |barrier| {
+        const redo_barrier_id = barrier.int(0);
+        const redo_barrier_desc = barrier.text(1);
+
+        try sql.exec(
+            conn,
+            "insert into history_barrier_undo (description) values (?)",
+            .{redo_barrier_desc},
+        );
+
+        const undo_barrier_id = conn.lastInsertedRowId();
+
+        try sql.exec(
+            conn,
+            \\insert into history_undo (barrier_id, statement)
+            \\select ?1, statement from history_redo where barrier_id=?2 order by id
+        ,
+            .{ undo_barrier_id, redo_barrier_id },
+        );
+    }
+    try sql.check(redo_barriers.err, conn);
+
+    try sql.execNoArgs(conn, "delete from history_redo");
+    try sql.execNoArgs(conn, "delete from history_barrier_redo");
+
+    try conn.commit();
 }

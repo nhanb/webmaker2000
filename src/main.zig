@@ -306,6 +306,10 @@ fn gui_frame(
                 .{ .expand = .horizontal },
             );
             if (title_entry.text_changed) {
+                if (gui_state.history.redos.len > 0) {
+                    std.debug.print(">>>>>>>>>>>>>>>>>>>>>>> FOLDING\n", .{});
+                    try history.foldRedos(conn);
+                }
                 try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
                 try history.addBarrier(history.Undo, conn, "Update post title");
             }

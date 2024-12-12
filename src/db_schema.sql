@@ -34,11 +34,8 @@ create table history_undo (
 );
 create table history_barrier_undo (
     id integer primary key autoincrement,
-    history_id integer unique not null,
     description text not null check (description <> ''),
-    undone boolean not null default false,
-
-    foreign key (history_id) references history_undo (id) on delete cascade
+    undone boolean not null default false
 );
 
 create table history_redo (
@@ -52,11 +49,8 @@ create table history_redo (
 -- we can use the same code on both of them.
 create table history_barrier_redo (
     id integer primary key autoincrement,
-    history_id integer unique not null,
     description text not null check (description <> ''),
-    undone boolean not null default false check (undone = false),
-
-    foreign key (history_id) references history_redo (id) on delete cascade
+    undone boolean not null default false check (undone = false)
 );
 
 -- TODO remove seed data
