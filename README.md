@@ -30,8 +30,11 @@ querying capabilities.
 
 Remaining puzzles for PoC:
 
-- undo stack
-- background processing for tasks that take longer than our per-frame budget
+- ~~undo stack~~ Done. Chose emacs-style undo to make it impossible to
+  accidentally lose data.
+- background processing for tasks that take longer than our per-frame budget:
+  + handling mid-operation crashes might be tricky?
+  + how would it interact with the undo thing?
 
 [1]: https://www.hytradboi.com/2022/building-data-centric-apps-with-a-reactive-relational-database
 [2]: https://guide.elm-lang.org/architecture/

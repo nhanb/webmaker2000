@@ -166,14 +166,6 @@ pub fn main() !void {
 
         const gui_state = try GuiState.read(conn, arena.allocator());
 
-        for (gui_state.history.undos) |undo| {
-            std.debug.print("Undo: {d}: {s}\n", .{ undo.id, undo.description });
-        }
-        for (gui_state.history.redos) |redo| {
-            std.debug.print("Redo: {d}: {s}\n", .{ redo.id, redo.description });
-        }
-        std.debug.print("---\n", .{});
-
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
 

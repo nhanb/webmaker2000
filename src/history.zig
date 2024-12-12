@@ -36,15 +36,11 @@ pub fn createTriggers(
     conn: zqlite.Conn,
     gpa: std.mem.Allocator,
 ) !void {
-    print("Registering undo for {d} tables:\n", .{HISTORY_TABLES.len});
-
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
 
     inline for (HISTORY_TABLES) |table| {
-        print("- table {s}\n", .{table});
-
         // First colect this table's column names
         var column_names = std.ArrayList([]const u8).init(arena);
 
@@ -57,7 +53,6 @@ pub fn createTriggers(
 
         while (records.next()) |row| {
             const column = try arena.dupe(u8, row.text(1));
-            print("    column {s}\n", .{column});
             try column_names.append(column);
         }
         try sql.check(records.err, conn);
@@ -159,8 +154,6 @@ pub fn dropTriggers(
     const arena = arena_instance.allocator();
 
     inline for (HISTORY_TABLES) |table| {
-        print("- table {s}\n", .{table});
-
         // First colect this table's column names
         var column_names = std.ArrayList([]const u8).init(arena);
 
@@ -173,7 +166,6 @@ pub fn dropTriggers(
 
         while (records.next()) |row| {
             const column = try arena.dupe(u8, row.text(1));
-            print("    column {s}\n", .{column});
             try column_names.append(column);
         }
         try sql.check(records.err, conn);
