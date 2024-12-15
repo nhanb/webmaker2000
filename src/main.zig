@@ -273,7 +273,7 @@ fn gui_frame(
                 try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                 try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
 
-                try history.addBarrier(history.Undo, conn, "Create post");
+                try history.addBarrier(history.Undo, conn, .create_post);
 
                 try conn.commit();
             }
@@ -330,7 +330,7 @@ fn gui_frame(
                     try history.foldRedos(conn);
                 }
                 try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
-                try history.addBarrier(history.Undo, conn, "Update post title");
+                try history.addBarrier(history.Undo, conn, .update_post_title);
             }
             title_entry.deinit();
 
@@ -361,7 +361,7 @@ fn gui_frame(
 
                 try sql.exec(conn, "update post set content=? where id=?", .{ content_entry.getText(), state.post.id });
 
-                try history.addBarrier(history.Undo, conn, "Update post content");
+                try history.addBarrier(history.Undo, conn, .update_post_content);
 
                 try conn.commit();
             }
@@ -415,7 +415,7 @@ fn gui_frame(
                             .{@intFromEnum(Modal.confirm_post_deletion)},
                         ));
 
-                        try history.addBarrier(history.Undo, conn, "Delete post");
+                        try history.addBarrier(history.Undo, conn, .delete_post);
 
                         try conn.commit();
                     }

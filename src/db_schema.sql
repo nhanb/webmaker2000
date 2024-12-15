@@ -34,7 +34,7 @@ create table history_undo (
 );
 create table history_barrier_undo (
     id integer primary key autoincrement,
-    description text not null check (description <> ''),
+    action integer not null,
     undone boolean not null default false
 );
 
@@ -49,7 +49,7 @@ create table history_redo (
 -- we can use the same code on both of them.
 create table history_barrier_redo (
     id integer primary key autoincrement,
-    description text not null check (description <> ''),
+    action integer not null,
     undone boolean not null default false check (undone = false)
 );
 

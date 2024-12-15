@@ -3,9 +3,16 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const print = std.debug.print;
 
+pub const Action = enum {
+    create_post,
+    update_post_title,
+    update_post_content,
+    delete_post,
+};
+
 pub const Barrier = struct {
     id: i64,
-    description: []const u8, // extracted from the barrier row
+    action: Action,
 };
 
 const HISTORY_TABLES = &.{
@@ -224,8 +231,8 @@ pub fn undo(
 
     try sql.exec(
         conn,
-        \\insert into history_barrier_redo (description)
-        \\values ((select description from history_barrier_undo order by id desc limit 1))
+        \\insert into history_barrier_redo (action)
+        \\values ((select action from history_barrier_undo order by id desc limit 1))
     ,
         .{},
     );
@@ -251,7 +258,7 @@ pub fn getBarriers(
     var rows = try sql.rows(
         conn,
         std.fmt.comptimePrint(
-            \\select id, description from {s}
+            \\select id, action from {s}
             \\where undone is false
             \\order by id desc
         , .{htype.barriers_table}),
@@ -262,7 +269,7 @@ pub fn getBarriers(
     while (rows.next()) |row| {
         try list.append(.{
             .id = row.int(0),
-            .description = try arena.dupe(u8, row.text(1)),
+            .action = @enumFromInt(row.int(1)),
         });
     }
     try sql.check(rows.err, conn);
@@ -273,15 +280,15 @@ pub fn getBarriers(
 pub fn addBarrier(
     comptime htype: HistoryType,
     conn: zqlite.Conn,
-    description: []const u8,
+    action: Action,
 ) !void {
     try sql.exec(
         conn,
         std.fmt.comptimePrint(
-            "insert into {s} (description) values (?)",
+            "insert into {s} (action) values (?)",
             .{htype.barriers_table},
         ),
-        .{description},
+        .{@intFromEnum(action)},
     );
 
     const barrier_id = conn.lastInsertedRowId();
@@ -349,17 +356,17 @@ pub fn redo(
 pub fn foldRedos(conn: zqlite.Conn) !void {
     try sql.execNoArgs(conn, "update history_barrier_undo set undone=false;");
 
-    var redo_barriers = try sql.rows(conn, "select id, description from history_barrier_redo order by id", .{});
+    var redo_barriers = try sql.rows(conn, "select id, action from history_barrier_redo order by id", .{});
     defer redo_barriers.deinit();
 
     while (redo_barriers.next()) |barrier| {
         const redo_barrier_id = barrier.int(0);
-        const redo_barrier_desc = barrier.text(1);
+        const redo_barrier_action = barrier.text(1);
 
         try sql.exec(
             conn,
-            "insert into history_barrier_undo (description) values (?)",
-            .{redo_barrier_desc},
+            "insert into history_barrier_undo (action) values (?)",
+            .{redo_barrier_action},
         );
 
         const undo_barrier_id = conn.lastInsertedRowId();
