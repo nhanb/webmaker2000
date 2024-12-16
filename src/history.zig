@@ -8,6 +8,17 @@ pub const Action = enum {
     update_post_title,
     update_post_content,
     delete_post,
+    change_scene,
+
+    fn isDebounceable(self: Action) bool {
+        return switch (self) {
+            .create_post => false,
+            .update_post_title => true,
+            .update_post_content => true,
+            .delete_post => false,
+            .change_scene => false,
+        };
+    }
 };
 
 pub const Barrier = struct {
@@ -26,16 +37,19 @@ const HistoryType = struct {
     main_table: []const u8,
     barriers_table: []const u8,
     trigger_prefix: []const u8,
+    enable_triggers_column: []const u8,
 };
 pub const Undo = HistoryType{
     .main_table = "history_undo",
     .barriers_table = "history_barrier_undo",
     .trigger_prefix = "history_trigger_undo",
+    .enable_triggers_column = "undo",
 };
 pub const Redo = HistoryType{
     .main_table = "history_redo",
     .barriers_table = "history_barrier_redo",
     .trigger_prefix = "history_trigger_redo",
+    .enable_triggers_column = "redo",
 };
 
 pub fn createTriggers(
@@ -43,6 +57,9 @@ pub fn createTriggers(
     conn: zqlite.Conn,
     gpa: std.mem.Allocator,
 ) !void {
+    var timer = try std.time.Timer.start();
+    defer std.debug.print("** createTriggers() took {}ms\n", .{timer.read() / 1_000_000});
+
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
@@ -68,7 +85,9 @@ pub fn createTriggers(
 
         // INSERT:
         const insert_trigger = std.fmt.comptimePrint(
-            \\CREATE TRIGGER {s}_{s}_insert AFTER INSERT ON {s} BEGIN
+            \\CREATE TRIGGER {s}_{s}_insert AFTER INSERT ON {s}
+            \\WHEN (select {s} from history_enable_triggers limit 1)
+            \\BEGIN
             \\  INSERT INTO {s} (statement) VALUES (
             \\      'DELETE FROM {s} WHERE id=' || new.id
             \\  );
@@ -77,6 +96,7 @@ pub fn createTriggers(
             htype.trigger_prefix,
             table,
             table,
+            htype.enable_triggers_column,
             htype.main_table,
             table,
         });
@@ -97,7 +117,9 @@ pub fn createTriggers(
 
         const update_trigger = try std.fmt.allocPrint(
             arena,
-            \\CREATE TRIGGER {s}_{s}_update AFTER UPDATE ON {s} BEGIN
+            \\CREATE TRIGGER {s}_{s}_update AFTER UPDATE ON {s}
+            \\WHEN (select {s} from history_enable_triggers limit 1)
+            \\BEGIN
             \\  INSERT INTO {s} (statement) VALUES (
             \\      'UPDATE {s} SET {s} WHERE id=' || old.id
             \\  );
@@ -107,6 +129,7 @@ pub fn createTriggers(
                 htype.trigger_prefix,
                 table,
                 table,
+                htype.enable_triggers_column,
                 htype.main_table,
                 table,
                 column_updates.items,
@@ -129,7 +152,9 @@ pub fn createTriggers(
 
         const delete_trigger = try std.fmt.allocPrint(
             arena,
-            \\CREATE TRIGGER {s}_{s}_delete AFTER DELETE ON {s} BEGIN
+            \\CREATE TRIGGER {s}_{s}_delete AFTER DELETE ON {s}
+            \\WHEN (select {s} from history_enable_triggers limit 1)
+            \\BEGIN
             \\  INSERT INTO {s} (statement) VALUES (
             \\      'INSERT INTO {s} ({s}) VALUES ({s})'
             \\  );
@@ -139,6 +164,7 @@ pub fn createTriggers(
                 htype.trigger_prefix,
                 table,
                 table,
+                htype.enable_triggers_column,
                 htype.main_table,
                 table,
                 try std.mem.join(arena, ",", column_names.items),
@@ -149,54 +175,17 @@ pub fn createTriggers(
     }
 }
 
-pub fn dropTriggers(
-    comptime htype: HistoryType,
-    conn: zqlite.Conn,
-    gpa: std.mem.Allocator,
-) !void {
-    print("Deleting triggers for {s}\n", .{htype.main_table});
-
-    var arena_instance = std.heap.ArenaAllocator.init(gpa);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
-
-    inline for (HISTORY_TABLES) |table| {
-        // First colect this table's column names
-        var column_names = std.ArrayList([]const u8).init(arena);
-
-        var records = try sql.rows(
-            conn,
-            std.fmt.comptimePrint("pragma table_info({s})", .{table}),
-            .{},
-        );
-        defer records.deinit();
-
-        while (records.next()) |row| {
-            const column = try arena.dupe(u8, row.text(1));
-            try column_names.append(column);
-        }
-        try sql.check(records.err, conn);
-
-        // Now drop triggers for all 3 events:
-        const actions: []const []const u8 = &.{ "insert", "update", "delete" };
-        inline for (actions) |action| {
-            try sql.execNoArgs(conn, std.fmt.comptimePrint(
-                "DROP TRIGGER IF EXISTS {s}_{s}_{s}",
-                .{ htype.trigger_prefix, table, action },
-            ));
-        }
-    }
-}
-
 pub fn undo(
-    arena: std.mem.Allocator,
     conn: zqlite.Conn,
     barriers: []Barrier,
 ) !void {
+    var timer = try std.time.Timer.start();
+    defer std.debug.print(">> undo() took {}ms\n", .{timer.read() / 1_000_000});
+
     std.debug.assert(barriers.len > 0);
 
-    try dropTriggers(Undo, conn, arena);
-    try createTriggers(Redo, conn, arena);
+    try disableUndoTriggers(conn);
+    try enableRedoTriggers(conn);
 
     // First find all undo records in this barrier,
     // execute and flag them as undone:
@@ -213,8 +202,6 @@ pub fn undo(
 
     while (undo_rows.next()) |row| {
         const sql_stmt = row.text(0);
-
-        print(">> Exec: {s}\n", .{sql_stmt});
         try sql.exec(conn, sql_stmt, .{});
     }
     try sql.check(undo_rows.err, conn);
@@ -244,8 +231,8 @@ pub fn undo(
         .{redo_barrier_id},
     );
 
-    try dropTriggers(Redo, conn, arena);
-    try createTriggers(Undo, conn, arena);
+    try disableRedoTriggers(conn);
+    try enableUndoTriggers(conn);
 }
 
 pub fn getBarriers(
@@ -277,39 +264,71 @@ pub fn getBarriers(
     return list.items;
 }
 
-pub fn addBarrier(
-    comptime htype: HistoryType,
-    conn: zqlite.Conn,
-    action: Action,
-) !void {
-    try sql.exec(
+// For text input changes, skip creating an undo barrier if this change is
+// within a few seconds since the last change.
+// This also cleans up trailing history_undo records in such cases.
+fn shouldDebounceBarrier(comptime action: Action, conn: zqlite.Conn) !bool {
+    if (!comptime action.isDebounceable()) {
+        return false;
+    }
+
+    var prevRow = try sql.selectRow(
         conn,
         std.fmt.comptimePrint(
-            "insert into {s} (action) values (?)",
-            .{htype.barriers_table},
+            \\select id
+            \\from history_barrier_undo
+            \\where action = {d}
+            \\  and created_at >= datetime('now', '-3 seconds')
+            \\  and id = (select max(id) from history_barrier_undo)
+        ,
+            .{@intFromEnum(action)},
         ),
+        .{},
+    ) orelse return false;
+
+    const prevBarrierId = prevRow.int(0);
+    try sql.exec(
+        conn,
+        "update history_barrier_undo set created_at = datetime('now') where id=?",
+        .{prevBarrierId},
+    );
+
+    try sql.execNoArgs(conn, "delete from history_undo where barrier_id is null");
+    return true;
+}
+
+pub fn addUndoBarrier(
+    comptime action: Action,
+    conn: zqlite.Conn,
+) !void {
+    if (try shouldDebounceBarrier(action, conn)) {
+        return;
+    }
+
+    try sql.exec(
+        conn,
+        "insert into history_barrier_undo (action) values (?)",
         .{@intFromEnum(action)},
     );
 
     const barrier_id = conn.lastInsertedRowId();
     try sql.exec(
         conn,
-        std.fmt.comptimePrint(
-            "update {s} set barrier_id = ? where barrier_id is null",
-            .{htype.main_table},
-        ),
+        "update history_undo set barrier_id = ? where barrier_id is null",
         .{barrier_id},
     );
 }
 
 pub fn redo(
-    arena: std.mem.Allocator,
     conn: zqlite.Conn,
     barriers: []Barrier,
 ) !void {
+    var timer = try std.time.Timer.start();
+    defer std.debug.print(">> redo() took {}ms\n", .{timer.read() / 1_000_000});
+
     std.debug.assert(barriers.len > 0);
 
-    try dropTriggers(Undo, conn, arena);
+    try disableUndoTriggers(conn);
 
     var redo_rows = try sql.rows(
         conn,
@@ -324,10 +343,7 @@ pub fn redo(
     while (redo_rows.next()) |row| {
         const id = row.text(0);
         const sql_stmt = row.text(1);
-
-        print(">> Exec: {s}\n", .{sql_stmt});
         try sql.exec(conn, sql_stmt, .{});
-
         try sql.exec(conn, "delete from history_redo where id=?", .{id});
     }
     try sql.check(redo_rows.err, conn);
@@ -350,9 +366,12 @@ pub fn redo(
         .{barriers[0].id},
     );
 
-    try createTriggers(Undo, conn, arena);
+    try enableUndoTriggers(conn);
 }
 
+// The heart of emacs-style undo-redo: when the user performs an undo, then
+// makes changes, we put all trailing redos into the canonical undo stack, to
+// make sure that every previous state is reachable via undo.
 pub fn foldRedos(conn: zqlite.Conn) !void {
     try sql.execNoArgs(conn, "update history_barrier_undo set undone=false;");
 
@@ -383,4 +402,17 @@ pub fn foldRedos(conn: zqlite.Conn) !void {
 
     try sql.execNoArgs(conn, "delete from history_redo");
     try sql.execNoArgs(conn, "delete from history_barrier_redo");
+}
+
+fn disableUndoTriggers(conn: zqlite.Conn) !void {
+    try sql.execNoArgs(conn, "update history_enable_triggers set undo=false");
+}
+fn enableUndoTriggers(conn: zqlite.Conn) !void {
+    try sql.execNoArgs(conn, "update history_enable_triggers set undo=true");
+}
+fn disableRedoTriggers(conn: zqlite.Conn) !void {
+    try sql.execNoArgs(conn, "update history_enable_triggers set redo=false");
+}
+fn enableRedoTriggers(conn: zqlite.Conn) !void {
+    try sql.execNoArgs(conn, "update history_enable_triggers set redo=true");
 }

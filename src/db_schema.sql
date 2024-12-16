@@ -35,7 +35,8 @@ create table history_undo (
 create table history_barrier_undo (
     id integer primary key autoincrement,
     action integer not null,
-    undone boolean not null default false
+    undone boolean not null default false,
+    created_at text not null default (datetime('now'))
 );
 
 create table history_redo (
@@ -50,7 +51,8 @@ create table history_redo (
 create table history_barrier_redo (
     id integer primary key autoincrement,
     action integer not null,
-    undone boolean not null default false check (undone = false)
+    undone boolean not null default false check (undone = false),
+    created_at text not null default (datetime('now'))
 );
 
 -- TODO remove seed data
@@ -59,3 +61,10 @@ insert into post (title, content) values
     ('Second post', 'Let''s keep this going.
 Shall we?')
 ;
+
+create table history_enable_triggers (
+    id integer primary key check (id=0),
+    undo boolean not null default true,
+    redo boolean not null default false
+);
+insert into history_enable_triggers(id) values (0);

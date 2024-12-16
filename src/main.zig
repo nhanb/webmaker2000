@@ -145,6 +145,7 @@ pub fn main() !void {
         try sql.execNoArgs(conn, "begin exclusive");
         try sql.execNoArgs(conn, @embedFile("db_schema.sql"));
         try history.createTriggers(history.Undo, conn, gpa);
+        try history.createTriggers(history.Redo, conn, gpa);
         try sql.execNoArgs(conn, "commit");
     } else {
         // TODO: read user_version pragma to check if the db was initialized
@@ -235,7 +236,7 @@ fn gui_frame(
         }
         if (try dvui.button(@src(), "Undo", .{}, undo_opts)) {
             if (gui_state.history.undos.len > 0) {
-                try history.undo(arena, conn, gui_state.history.undos);
+                try history.undo(conn, gui_state.history.undos);
             }
         }
 
@@ -251,7 +252,7 @@ fn gui_frame(
         }
         if (try dvui.button(@src(), "Redo", .{}, redo_opts)) {
             if (gui_state.history.redos.len > 0) {
-                try history.redo(arena, conn, gui_state.history.redos);
+                try history.redo(conn, gui_state.history.redos);
             }
         }
     }
@@ -273,7 +274,7 @@ fn gui_frame(
                 try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                 try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
 
-                try history.addBarrier(history.Undo, conn, .create_post);
+                try history.addUndoBarrier(.create_post, conn);
 
                 try conn.commit();
             }
@@ -285,8 +286,10 @@ fn gui_frame(
                 if (try dvui.button(@src(), "Edit", .{}, .{})) {
                     try conn.transaction();
                     errdefer conn.rollback();
+                    if (gui_state.history.redos.len > 0) try history.foldRedos(conn);
                     try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                     try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post.id});
+                    try history.addUndoBarrier(.change_scene, conn);
                     try conn.commit();
                 }
 
@@ -326,11 +329,12 @@ fn gui_frame(
                 .{ .expand = .horizontal },
             );
             if (title_entry.text_changed) {
-                if (gui_state.history.redos.len > 0) {
-                    try history.foldRedos(conn);
-                }
+                try conn.transaction();
+                errdefer conn.rollback();
+                defer conn.commit() catch unreachable;
+                if (gui_state.history.redos.len > 0) try history.foldRedos(conn);
                 try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
-                try history.addBarrier(history.Undo, conn, .update_post_title);
+                try history.addUndoBarrier(.update_post_title, conn);
             }
             title_entry.deinit();
 
@@ -354,15 +358,9 @@ fn gui_frame(
             if (content_entry.text_changed) {
                 try conn.transaction();
                 errdefer conn.rollback();
-
-                if (gui_state.history.redos.len > 0) {
-                    try history.foldRedos(conn);
-                }
-
+                if (gui_state.history.redos.len > 0) try history.foldRedos(conn);
                 try sql.exec(conn, "update post set content=? where id=?", .{ content_entry.getText(), state.post.id });
-
-                try history.addBarrier(history.Undo, conn, .update_post_content);
-
+                try history.addUndoBarrier(.update_post_content, conn);
                 try conn.commit();
             }
             content_entry.deinit();
@@ -372,7 +370,12 @@ fn gui_frame(
                 defer hbox.deinit();
 
                 if (try dvui.button(@src(), "Back", .{}, .{})) {
+                    try conn.transaction();
+                    errdefer conn.rollback();
+                    if (gui_state.history.redos.len > 0) try history.foldRedos(conn);
                     try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
+                    try history.addUndoBarrier(.change_scene, conn);
+                    try conn.commit();
                 }
 
                 if (try dvui.button(@src(), "Delete", .{}, .{})) {
@@ -403,10 +406,7 @@ fn gui_frame(
                     if (try dvui.button(@src(), "Yes", .{}, .{})) {
                         try conn.transaction();
                         errdefer conn.rollback();
-
-                        if (gui_state.history.redos.len > 0) {
-                            try history.foldRedos(conn);
-                        }
+                        if (gui_state.history.redos.len > 0) try history.foldRedos(conn);
 
                         try sql.exec(conn, "delete from post where id=?", .{state.post.id});
                         try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
@@ -415,8 +415,7 @@ fn gui_frame(
                             .{@intFromEnum(Modal.confirm_post_deletion)},
                         ));
 
-                        try history.addBarrier(history.Undo, conn, .delete_post);
-
+                        try history.addUndoBarrier(.delete_post, conn);
                         try conn.commit();
                     }
 
