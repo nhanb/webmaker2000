@@ -224,32 +224,28 @@ fn gui_frame(
         );
         defer toolbar.deinit();
 
-        var undo_opts = dvui.Options{};
-        if (gui_state.history.undos.len == 0) {
-            undo_opts = dvui.Options{
-                .color_text = .{ .name = .fill_press },
-                .color_text_press = .{ .name = .fill_press },
-                .color_fill_hover = .{ .name = .fill_control },
-                .color_fill_press = .{ .name = .fill_control },
-                .color_accent = .{ .name = .fill_control },
-            };
-        }
+        const undo_opts: dvui.Options = if (gui_state.history.undos.len == 0) .{
+            .color_text = .{ .name = .fill_press },
+            .color_text_press = .{ .name = .fill_press },
+            .color_fill_hover = .{ .name = .fill_control },
+            .color_fill_press = .{ .name = .fill_control },
+            .color_accent = .{ .name = .fill_control },
+        } else .{};
+
         if (try dvui.button(@src(), "Undo", .{}, undo_opts)) {
             if (gui_state.history.undos.len > 0) {
                 try history.undo(conn, gui_state.history.undos);
             }
         }
 
-        var redo_opts = dvui.Options{};
-        if (gui_state.history.redos.len == 0) {
-            redo_opts = dvui.Options{
-                .color_text = .{ .name = .fill_press },
-                .color_text_press = .{ .name = .fill_press },
-                .color_fill_hover = .{ .name = .fill_control },
-                .color_fill_press = .{ .name = .fill_control },
-                .color_accent = .{ .name = .fill_control },
-            };
-        }
+        const redo_opts: dvui.Options = if (gui_state.history.redos.len == 0) .{
+            .color_text = .{ .name = .fill_press },
+            .color_text_press = .{ .name = .fill_press },
+            .color_fill_hover = .{ .name = .fill_control },
+            .color_fill_press = .{ .name = .fill_control },
+            .color_accent = .{ .name = .fill_control },
+        } else .{};
+
         if (try dvui.button(@src(), "Redo", .{}, redo_opts)) {
             if (gui_state.history.redos.len > 0) {
                 try history.redo(conn, gui_state.history.redos);
@@ -343,6 +339,8 @@ fn gui_frame(
                 @src(),
                 .{
                     .multiline = true,
+                    .break_lines = true,
+                    .scroll_horizontal = false,
                     .text = .{
                         .buffer_dynamic = .{
                             .backing = &content_buf,
