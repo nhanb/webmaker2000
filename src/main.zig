@@ -3,6 +3,8 @@ const dvui = @import("dvui");
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const history = @import("history.zig");
+const theme = @import("theme.zig");
+
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
 }
@@ -121,8 +123,23 @@ pub fn main() !void {
     defer backend.deinit();
 
     // init dvui Window (maps onto a single OS window)
-    var win = try dvui.Window.init(@src(), gpa, backend.backend(), .{});
+    var win = try dvui.Window.init(
+        @src(),
+        gpa,
+        backend.backend(),
+        .{
+            .theme = &theme.default,
+        },
+    );
     defer win.deinit();
+
+    try win.font_bytes.put(
+        "Noto",
+        dvui.FontBytesEntry{
+            .ttf_bytes = @embedFile("NotoSans-Regular.ttf"),
+            .allocator = null,
+        },
+    );
 
     // Attempt to open db file at `path`.
     // If it doesn't exist, create and initialize its schema.

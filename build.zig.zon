@@ -3,8 +3,8 @@
     .version = "0.0.1",
     .dependencies = .{
         .dvui = .{
-            .url = "https://github.com/david-vanderson/dvui/archive/e7cf46544d3a016e436de4b4ee8becd9dc1ac03e.zip",
-            .hash = "1220949786e6564134bd9ca7d50cc307bffac1d8542c5864fcc7056e10e37213ec5f",
+            .url = "https://github.com/david-vanderson/dvui/archive/de8f7931a2a92f4bb1053835e9124505d251f9b3.zip",
+            .hash = "12205f1fdc5f437b6de9255fe8555f8af3c91f14c036e664ffd029d41151d4c76c49",
         },
         .zqlite = .{
             .url = "https://github.com/karlseguin/zqlite.zig/archive/refs/heads/zig-0.13.zip",
