@@ -136,7 +136,14 @@ pub fn main() !void {
     try win.font_bytes.put(
         "Noto",
         dvui.FontBytesEntry{
-            .ttf_bytes = @embedFile("NotoSans-Regular.ttf"),
+            .ttf_bytes = @embedFile("fonts/NotoSans-Regular.ttf"),
+            .allocator = null,
+        },
+    );
+    try win.font_bytes.put(
+        "NotoBd",
+        dvui.FontBytesEntry{
+            .ttf_bytes = @embedFile("fonts/NotoSans-Bold.ttf"),
             .allocator = null,
         },
     );
