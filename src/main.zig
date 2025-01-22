@@ -19,9 +19,9 @@ const Post = struct {
     content: []u8,
 };
 
-const Scene = enum {
-    listing,
-    editing,
+const Scene = enum(i64) {
+    listing = 0,
+    editing = 1,
 };
 
 const SceneState = union(Scene) {
@@ -34,8 +34,8 @@ const SceneState = union(Scene) {
     },
 };
 
-const Modal = enum {
-    confirm_post_deletion,
+const Modal = enum(i64) {
+    confirm_post_deletion = 0,
 };
 
 const GuiState = struct {
