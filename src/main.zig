@@ -391,7 +391,12 @@ fn gui_frame(
                 var hbox = try dvui.box(@src(), .horizontal, .{});
                 defer hbox.deinit();
 
-                if (try dvui.button(@src(), "Back", .{}, .{})) {
+                // Only show "Back" button if post is not empty
+                // TODO there might be a more elegant way to implement "discard
+                // newly created post if empty".
+                if ((state.post.title.len > 0 or state.post.content.len > 0) and
+                    try dvui.button(@src(), "Back", .{}, .{}))
+                {
                     try conn.transaction();
                     errdefer conn.rollback();
                     if (gui_state.history.redos.len > 0) try history.foldRedos(conn);
