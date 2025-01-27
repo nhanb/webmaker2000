@@ -1,3 +1,6 @@
 /.zig-cache
 /zig-out
+
+# dummy input/output:
 /*.wm2k
+/Site1

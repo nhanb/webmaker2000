@@ -10,6 +10,10 @@
             .url = "https://github.com/karlseguin/zqlite.zig/archive/refs/heads/zig-0.13.zip",
             .hash = "12205c870252c9d4a38397809f5388b13dbc6a4550f50d5f214a355f601e38814a67",
         },
+        .ziglua = .{
+            .url = "git+https://github.com/natecraddock/ziglua?ref=zig-0.13.0#bcbfe40acd7218430b5fb7a880615b2bf15c02ac",
+            .hash = "1220a7983916ac2bcba3ded67174ef354012da525c7f85b0e48a416368a637012d78",
+        },
     },
     .paths = .{""},
 }

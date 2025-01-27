@@ -27,6 +27,13 @@ pub fn build(b: *std.Build) !void {
     exe.linkSystemLibrary("sqlite3");
     exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 
+    // ziglua
+    const ziglua = b.dependency("ziglua", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("ziglua", ziglua.module("ziglua"));
+
     const compile_step = b.step("compile-wm2k", "Compile wm2k");
     compile_step.dependOn(&b.addInstallArtifact(exe, .{}).step);
     b.getInstallStep().dependOn(compile_step);

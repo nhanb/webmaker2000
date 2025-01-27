@@ -4,6 +4,7 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const history = @import("history.zig");
 const theme = @import("theme.zig");
+const generate = @import("generate.zig");
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
@@ -12,6 +13,7 @@ const Backend = dvui.backend;
 
 // TODO: read path from argv instead
 const DB_PATH = "Site1.wm2k";
+const OUT_PATH = std.fs.path.stem(DB_PATH);
 
 const Post = struct {
     id: i64,
@@ -274,6 +276,15 @@ fn gui_frame(
             if (gui_state.history.redos.len > 0) {
                 try history.redo(conn, gui_state.history.redos);
             }
+        }
+
+        if (try dvui.button(@src(), "Generate", .{}, .{})) {
+            var cwd = std.fs.cwd();
+            try cwd.deleteTree(OUT_PATH);
+
+            var out_dir = try cwd.makeOpenPath(OUT_PATH, .{});
+            defer out_dir.close();
+            try generate.all(conn, out_dir);
         }
     }
 
