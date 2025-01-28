@@ -5,6 +5,7 @@ const sql = @import("sql.zig");
 const history = @import("history.zig");
 const theme = @import("theme.zig");
 const generate = @import("generate.zig");
+const djot = @import("djot.zig");
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
@@ -179,6 +180,9 @@ pub fn main() !void {
     }
 
     defer conn.close();
+
+    try djot.init(gpa);
+    defer djot.deinit();
 
     // Create arena that is reset every frame:
     var arena = std.heap.ArenaAllocator.init(gpa);

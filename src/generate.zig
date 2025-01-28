@@ -4,7 +4,7 @@ const fs = std.fs;
 const zqlite = @import("zqlite");
 const ziglua = @import("ziglua");
 const sql = @import("sql.zig");
-const djot_lua = @embedFile("djot.lua");
+const djot = @import("djot.zig");
 
 pub fn post(
     out_dir: fs.Dir,
@@ -38,45 +38,9 @@ pub fn all(conn: zqlite.Conn, arena: std.mem.Allocator, out_dir: fs.Dir) !void {
     while (rows.next()) |row| {
         const id = row.text(0);
         const title = row.text(1);
-        const content = try djotToHtml(arena, row.text(2));
-        try post(out_dir, id, title, content);
+        const content = row.text(2);
+        const content_html = try djot.toHtml(arena, content);
+        try post(out_dir, id, title, content_html);
     }
     try sql.check(rows.err, conn);
-}
-
-// TODO: don't recreate the lua vm every time
-pub fn djotToHtml(arena: std.mem.Allocator, input: []const u8) ![]const u8 {
-    var lua = try ziglua.Lua.init(arena);
-    defer lua.deinit();
-
-    lua.openLibs(); // load lua standard libraries
-
-    lua.doString(djot_lua) catch |err| {
-        print("lua error: {s}\n", .{try lua.toString(-1)});
-        return err;
-    };
-
-    lua.doString(
-        \\djot = require("djot")
-        \\function djotToHtml(input)
-        \\  return djot.render_html(djot.parse(input))
-        \\end
-    ) catch |err| {
-        print("lua error: {s}\n", .{try lua.toString(-1)});
-        return err;
-    };
-
-    _ = try lua.getGlobal("djotToHtml");
-    _ = lua.pushString(input);
-    lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
-        print("lua error: {s}\n", .{try lua.toString(-1)});
-        return err;
-    };
-
-    const result = arena.dupeZ(u8, try lua.toString(1));
-
-    // All done. Pop previous result from stack.
-    lua.pop(1);
-
-    return result;
 }
