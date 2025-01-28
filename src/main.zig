@@ -284,7 +284,7 @@ fn gui_frame(
 
             var out_dir = try cwd.makeOpenPath(OUT_PATH, .{});
             defer out_dir.close();
-            try generate.all(conn, out_dir);
+            try generate.all(conn, arena, out_dir);
         }
     }
 
