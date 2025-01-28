@@ -3,12 +3,12 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const print = std.debug.print;
 
-pub const Action = enum {
-    create_post,
-    update_post_title,
-    update_post_content,
-    delete_post,
-    change_scene,
+pub const Action = enum(i64) {
+    create_post = 0,
+    update_post_title = 1,
+    update_post_content = 2,
+    delete_post = 3,
+    change_scene = 4,
 
     fn isDebounceable(self: Action) bool {
         return switch (self) {
@@ -278,7 +278,7 @@ fn shouldDebounceBarrier(comptime action: Action, conn: zqlite.Conn) !bool {
             \\select id
             \\from history_barrier_undo
             \\where action = {d}
-            \\  and created_at >= datetime('now', '-3 seconds')
+            \\  and created_at >= datetime('now', '-2 seconds')
             \\  and id = (select max(id) from history_barrier_undo)
         ,
             .{@intFromEnum(action)},
