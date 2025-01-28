@@ -39,6 +39,7 @@ pub fn selectRow(conn: zqlite.Conn, sql: []const u8, args: anytype) !?zqlite.Row
     });
 }
 
+/// Assumes the result is only 1 row with 1 column, which is an int.
 pub fn selectInt(conn: zqlite.Conn, sql: []const u8) !i64 {
     var row = (conn.row(sql, .{}) catch |err| {
         std.debug.print(">> sql error: {s}\n", .{conn.lastError()});

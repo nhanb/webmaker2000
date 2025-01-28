@@ -68,3 +68,10 @@ create table history_enable_triggers (
     redo boolean not null default false
 );
 insert into history_enable_triggers(id) values (0);
+
+create table gui_status_text (
+    id integer primary key check (id = 0) default 0,
+    status_text text default '',
+    expires_at text default (datetime('now'))
+);
+insert into gui_status_text (id) values (0);

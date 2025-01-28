@@ -43,6 +43,7 @@ const Modal = enum(i64) {
 
 const GuiState = struct {
     scene: SceneState,
+    status_text: []const u8,
     history: struct {
         undos: []history.Barrier,
         redos: []history.Barrier,
@@ -100,8 +101,19 @@ const GuiState = struct {
             },
         };
 
+        const status_text_row = try sql.selectRow(
+            conn,
+            "select status_text from gui_status_text where expires_at > datetime('now')",
+            .{},
+        );
+        const status_text = if (status_text_row) |row| blk: {
+            defer row.deinit();
+            break :blk try arena.dupe(u8, row.text(0));
+        } else "";
+
         return GuiState{
             .scene = scene,
+            .status_text = status_text,
             .history = .{
                 .undos = try history.getBarriers(history.Undo, conn, arena),
                 .redos = try history.getBarriers(history.Redo, conn, arena),
@@ -180,6 +192,9 @@ pub fn main() !void {
     }
 
     defer conn.close();
+
+    // don't want any trailing status text on startup
+    try sql.execNoArgs(conn, "update gui_status_text set status_text=''");
 
     try djot.init(gpa);
     defer djot.deinit();
@@ -335,6 +350,13 @@ fn gui_frame(
                     .{ .id_extra = i, .gravity_y = 0.5 },
                 );
             }
+
+            try dvui.label(
+                @src(),
+                "{s}",
+                .{gui_state.status_text},
+                .{ .font_style = .body, .gravity_y = 1 },
+            );
         },
 
         .editing => |state| {
@@ -427,6 +449,8 @@ fn gui_frame(
                     ));
                 }
             }
+
+            try dvui.label(@src(), "{s}", .{gui_state.status_text}, .{});
 
             // Post deletion confirmation modal:
             if (state.show_confirm_delete) {

@@ -19,6 +19,20 @@ pub const Action = enum(i64) {
             .change_scene => false,
         };
     }
+
+    fn userFriendlyName(self: Action) []const u8 {
+        return switch (self) {
+            inline .create_post => "Create new post",
+            inline .update_post_title => "Update post title",
+            inline .update_post_content => "Update post content",
+            inline .delete_post => "Delete post",
+            inline .change_scene => "Change scene",
+        };
+    }
+
+    fn undoMessage(self: Action) []const u8 {
+        return self.userFriendlyName();
+    }
 };
 
 pub const Barrier = struct {
@@ -31,6 +45,7 @@ const HISTORY_TABLES = &.{
     "gui_scene",
     "gui_scene_editing",
     "gui_modal",
+    "gui_status_text",
 };
 
 const HistoryType = struct {
@@ -233,6 +248,19 @@ pub fn undo(
 
     try disableRedoTriggers(conn);
     try enableUndoTriggers(conn);
+
+    const status_text = switch (barriers[0].action) {
+        .create_post => "Undone post creation.",
+        .update_post_title => "Undone post title update.",
+        .update_post_content => "Undone post content update.",
+        .delete_post => "Undone post deletion.",
+        .change_scene => "Undone scene change.",
+    };
+    try sql.exec(conn,
+        \\update gui_status_text
+        \\set status_text = ?,
+        \\    expires_at = datetime('now', '+7 seconds')
+    , .{status_text});
 }
 
 pub fn getBarriers(
@@ -367,6 +395,19 @@ pub fn redo(
     );
 
     try enableUndoTriggers(conn);
+
+    const status_text = switch (barriers[0].action) {
+        .create_post => "Redone post creation.",
+        .update_post_title => "Redone post title update.",
+        .update_post_content => "Redone post content update.",
+        .delete_post => "Redone post deletion.",
+        .change_scene => "Redone scene change.",
+    };
+    try sql.exec(conn,
+        \\update gui_status_text
+        \\set status_text = ?,
+        \\    expires_at = datetime('now', '+7 seconds')
+    , .{status_text});
 }
 
 // The heart of emacs-style undo-redo: when the user performs an undo, then
