@@ -298,12 +298,21 @@ fn gui_frame(
         }
 
         if (try dvui.button(@src(), "Generate", .{}, .{})) {
+            var timer = try std.time.Timer.start();
+
             var cwd = std.fs.cwd();
             try cwd.deleteTree(OUT_PATH);
 
             var out_dir = try cwd.makeOpenPath(OUT_PATH, .{});
             defer out_dir.close();
             try generate.all(conn, arena, out_dir);
+
+            const miliseconds = timer.read() / 1_000_000;
+            try sql.exec(
+                conn,
+                "update gui_status_text set status_text=?, expires_at = datetime('now', '+7 seconds')",
+                .{try std.fmt.allocPrint(arena, "Generated static site in {d} miliseconds", .{miliseconds})},
+            );
         }
     }
 
