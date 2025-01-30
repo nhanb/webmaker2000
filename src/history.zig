@@ -394,7 +394,9 @@ pub fn redo(
 // The heart of emacs-style undo-redo: when the user performs an undo, then
 // makes changes, we put all trailing redos into the canonical undo stack, to
 // make sure that every previous state is reachable via undo.
-pub fn foldRedos(conn: zqlite.Conn) !void {
+pub fn foldRedos(conn: zqlite.Conn, redos: []Barrier) !void {
+    if (redos.len == 0) return;
+
     try sql.execNoArgs(conn, "update history_barrier_undo set undone=false;");
 
     var redo_barriers = try sql.rows(conn, "select id, action from history_barrier_redo order by id", .{});
