@@ -1,4 +1,5 @@
 const std = @import("std");
+const print = std.debug.print;
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
@@ -148,6 +149,7 @@ pub fn main() !void {
     );
     defer win.deinit();
 
+    // Add Noto Sans font which supports Vietnamese
     try win.font_bytes.put(
         "Noto",
         dvui.FontBytesEntry{
@@ -162,6 +164,10 @@ pub fn main() !void {
             .allocator = null,
         },
     );
+
+    // Extra keybinds
+    try win.keybinds.putNoClobber("wm2k_undo", .{ .control = true, .shift = false, .key = .z });
+    try win.keybinds.putNoClobber("wm2k_redo", .{ .control = true, .shift = true, .key = .z });
 
     // Attempt to open db file at `path`.
     // If it doesn't exist, create and initialize its schema.
@@ -251,6 +257,26 @@ fn gui_frame(
     arena: std.mem.Allocator,
     conn: zqlite.Conn,
 ) !void {
+
+    // Handle keyboard shortcuts
+    const evts = dvui.events();
+    for (evts) |*e| {
+        switch (e.evt) {
+            .key => |key| {
+                if (key.action == .down) {
+                    if (key.matchBind("wm2k_undo")) {
+                        try history.undo(conn, gui_state.history.undos);
+                    } else if (key.matchBind("wm2k_redo")) {
+                        try history.redo(conn, gui_state.history.redos);
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    // Actual GUI starts here
+
     var scroll = try dvui.scrollArea(
         @src(),
         .{},
@@ -278,9 +304,7 @@ fn gui_frame(
         } else .{};
 
         if (try dvui.button(@src(), "Undo", .{}, undo_opts)) {
-            if (gui_state.history.undos.len > 0) {
-                try history.undo(conn, gui_state.history.undos);
-            }
+            try history.undo(conn, gui_state.history.undos);
         }
 
         const redo_opts: dvui.Options = if (gui_state.history.redos.len == 0) .{
@@ -292,9 +316,7 @@ fn gui_frame(
         } else .{};
 
         if (try dvui.button(@src(), "Redo", .{}, redo_opts)) {
-            if (gui_state.history.redos.len > 0) {
-                try history.redo(conn, gui_state.history.redos);
-            }
+            try history.redo(conn, gui_state.history.redos);
         }
 
         if (try dvui.button(@src(), "Generate", .{}, .{})) {
@@ -311,7 +333,7 @@ fn gui_frame(
             try sql.exec(
                 conn,
                 "update gui_status_text set status_text=?, expires_at = datetime('now', '+7 seconds')",
-                .{try std.fmt.allocPrint(arena, "Generated static site in {d} miliseconds", .{miliseconds})},
+                .{try std.fmt.allocPrint(arena, "Generated static site in {d}ms.", .{miliseconds})},
             );
         }
     }

@@ -194,10 +194,10 @@ pub fn undo(
     conn: zqlite.Conn,
     barriers: []Barrier,
 ) !void {
+    if (barriers.len == 0) return;
+
     var timer = try std.time.Timer.start();
     defer std.debug.print(">> undo() took {}ms\n", .{timer.read() / 1_000_000});
-
-    std.debug.assert(barriers.len > 0);
 
     try disableUndoTriggers(conn);
     try enableRedoTriggers(conn);
@@ -351,10 +351,10 @@ pub fn redo(
     conn: zqlite.Conn,
     barriers: []Barrier,
 ) !void {
+    if (barriers.len == 0) return;
+
     var timer = try std.time.Timer.start();
     defer std.debug.print(">> redo() took {}ms\n", .{timer.read() / 1_000_000});
-
-    std.debug.assert(barriers.len > 0);
 
     try disableUndoTriggers(conn);
 
