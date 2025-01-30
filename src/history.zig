@@ -226,16 +226,16 @@ pub fn undo(
     try enableUndoTriggers(conn);
 
     const status_text = switch (barriers[0].action) {
-        .create_post => "Undone post creation.",
-        .update_post_title => "Undone post title update.",
-        .update_post_content => "Undone post content update.",
-        .delete_post => "Undone post deletion.",
-        .change_scene => "Undone scene change.",
+        .create_post => "Undo: Create post.",
+        .update_post_title => "Undo: Update post title.",
+        .update_post_content => "Undo: Update post content.",
+        .delete_post => "Undo: Delete post.",
+        .change_scene => "Undo: Change scene.",
     };
     try sql.exec(conn,
         \\update gui_status_text
         \\set status_text = ?,
-        \\    expires_at = datetime('now', '+7 seconds')
+        \\    expires_at = datetime('now', '+5 seconds')
     , .{status_text});
 }
 
@@ -378,16 +378,16 @@ pub fn redo(
     try enableUndoTriggers(conn);
 
     const status_text = switch (barriers[0].action) {
-        .create_post => "Redone post creation.",
-        .update_post_title => "Redone post title update.",
-        .update_post_content => "Redone post content update.",
-        .delete_post => "Redone post deletion.",
-        .change_scene => "Redone scene change.",
+        .create_post => "Redo: Create post.",
+        .update_post_title => "Redo: Update post title.",
+        .update_post_content => "Redo: Update post content.",
+        .delete_post => "Redo: Delete post.",
+        .change_scene => "Redo: Change scene.",
     };
     try sql.exec(conn,
         \\update gui_status_text
         \\set status_text = ?,
-        \\    expires_at = datetime('now', '+7 seconds')
+        \\    expires_at = datetime('now', '+5 seconds')
     , .{status_text});
 }
 

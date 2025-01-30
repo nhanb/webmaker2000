@@ -332,7 +332,7 @@ fn gui_frame(
             const miliseconds = timer.read() / 1_000_000;
             try sql.exec(
                 conn,
-                "update gui_status_text set status_text=?, expires_at = datetime('now', '+7 seconds')",
+                "update gui_status_text set status_text=?, expires_at = datetime('now', '+5 seconds')",
                 .{try std.fmt.allocPrint(arena, "Generated static site in {d}ms.", .{miliseconds})},
             );
         }
