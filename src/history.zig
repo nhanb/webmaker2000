@@ -9,30 +9,6 @@ pub const Action = enum(i64) {
     update_post_content = 2,
     delete_post = 3,
     change_scene = 4,
-
-    fn isDebounceable(self: Action) bool {
-        return switch (self) {
-            .create_post => false,
-            .update_post_title => true,
-            .update_post_content => true,
-            .delete_post => false,
-            .change_scene => false,
-        };
-    }
-
-    fn userFriendlyName(self: Action) []const u8 {
-        return switch (self) {
-            inline .create_post => "Create new post",
-            inline .update_post_title => "Update post title",
-            inline .update_post_content => "Update post content",
-            inline .delete_post => "Delete post",
-            inline .change_scene => "Change scene",
-        };
-    }
-
-    fn undoMessage(self: Action) []const u8 {
-        return self.userFriendlyName();
-    }
 };
 
 pub const Barrier = struct {
@@ -296,9 +272,14 @@ pub fn getBarriers(
 // within a few seconds since the last change.
 // This also cleans up trailing history_undo records in such cases.
 fn shouldDebounceBarrier(comptime action: Action, conn: zqlite.Conn) !bool {
-    if (!comptime action.isDebounceable()) {
-        return false;
-    }
+    const is_debounceable = comptime switch (action) {
+        .create_post => false,
+        .update_post_title => true,
+        .update_post_content => true,
+        .delete_post => false,
+        .change_scene => false,
+    };
+    if (!is_debounceable) return false;
 
     var prevRow = try sql.selectRow(
         conn,
