@@ -3,16 +3,16 @@
     .version = "0.0.1",
     .dependencies = .{
         .dvui = .{
-            .url = "https://github.com/david-vanderson/dvui/archive/de8f7931a2a92f4bb1053835e9124505d251f9b3.zip",
-            .hash = "12205f1fdc5f437b6de9255fe8555f8af3c91f14c036e664ffd029d41151d4c76c49",
+            .url = "git+https://github.com/david-vanderson/dvui?ref=main#3423af7f9cc50f88693ea10623481e06bef78271",
+            .hash = "12209bb164eb394ce541faddab65cecd8e19459a7d6184d0aa4c2187fa2cb2564fb0",
         },
         .zqlite = .{
-            .url = "https://github.com/karlseguin/zqlite.zig/archive/refs/heads/zig-0.13.zip",
-            .hash = "12205c870252c9d4a38397809f5388b13dbc6a4550f50d5f214a355f601e38814a67",
+            .url = "git+https://github.com/karlseguin/zqlite.zig?ref=master#f0de7a25b97c38c3209e218d6b1a79e93ed54be1",
+            .hash = "12203fe4fcb336d29e22a7a880472813363b26d527cde3ffb0d349b8edb6ac43c34b",
         },
         .ziglua = .{
-            .url = "git+https://github.com/natecraddock/ziglua?ref=zig-0.13.0#bcbfe40acd7218430b5fb7a880615b2bf15c02ac",
-            .hash = "1220a7983916ac2bcba3ded67174ef354012da525c7f85b0e48a416368a637012d78",
+            .url = "git+https://github.com/natecraddock/ziglua?ref=main#4322c27784c022bed67d8de24977385e432f275e",
+            .hash = "1220cc71cd47b26ac53721b89d47f98cca82573e247e6299431e5d9f60a3bcd2deec",
         },
     },
     .paths = .{""},
