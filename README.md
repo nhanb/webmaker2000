@@ -1,16 +1,22 @@
-Zig 0.14, assuming sdl2 & sqlite3 are installed on system:
+Dependencies:
+
+- Build time: zig 0.14
+- Runtime: libc
+
+Sqlite3 and sdl3 are statically compiled into the executable by default.
 
 ```sh
-zig build run -fsys=sdl2
+zig build run
 
 # or, to watch:
-find src | entr -rc zig build run -fsys=sdl2
+find src | entr -rc zig build run
 ```
+
+Optionally, add `-fsys=sdl3` to use sdl3 from the system.
 
 # What
 
-This is an experiment in [rubbing sqlite][1] on [The Elm Architecture][2], only
-going a bit further:
+This is an experiment in [rubbing sqlite][1] on a desktop GUI:
 
 Both data and GUI state are stored in an sqlite3 database, all of which are
 queried every frame. All GUI actions trigger changes to the underlying db
@@ -37,5 +43,4 @@ Remaining puzzles for PoC:
   + how would it interact with the undo thing?
 
 [1]: https://www.hytradboi.com/2022/building-data-centric-apps-with-a-reactive-relational-database
-[2]: https://guide.elm-lang.org/architecture/
 [3]: https://www.sqlite.org/faq.html#q19
