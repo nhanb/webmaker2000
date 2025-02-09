@@ -14,5 +14,8 @@ pub var default = blk: {
     theme.font_title_3 = .{ .size = 24, .name = "NotoBd" };
     theme.font_title_4 = .{ .size = 22, .name = "NotoBd" };
 
+    theme.color_fill_control = theme.color_fill_window;
+    theme.color_border = dvui.Color.black;
+
     break :blk theme;
 };

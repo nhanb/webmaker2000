@@ -149,6 +149,12 @@ pub fn main() !void {
     );
     defer win.deinit();
 
+    dvui.ButtonWidget.defaults.corner_radius = dvui.Rect.all(0);
+    dvui.ButtonWidget.defaults.border = .{ .h = 3, .w = 3, .x = 1, .y = 1 };
+    dvui.ButtonWidget.defaults.color_accent = .{ .color = dvui.Color.black };
+    dvui.TextEntryWidget.defaults.corner_radius = dvui.Rect.all(0);
+    dvui.FloatingWindowWidget.defaults.corner_radius = dvui.Rect.all(0);
+
     // Add Noto Sans font which supports Vietnamese
     try win.font_bytes.put(
         "Noto",
@@ -312,7 +318,7 @@ fn gui_frame(
             .color_text_press = .{ .name = .fill_press },
             .color_fill_hover = .{ .name = .fill_control },
             .color_fill_press = .{ .name = .fill_control },
-            .color_accent = .{ .name = .fill_control },
+            .color_accent = .{ .color = dvui.Color{ .a = 0x00 } },
         } else .{};
 
         if (try dvui.button(@src(), "Redo", .{}, redo_opts)) {
