@@ -209,10 +209,8 @@ pub fn undo(
 
     try sql.exec(
         conn,
-        \\insert into history_barrier_redo (action)
-        \\values ((select action from history_barrier_undo order by id desc limit 1))
-    ,
-        .{},
+        "insert into history_barrier_redo (action) values (?)",
+        .{@intFromEnum(barriers[0].action)},
     );
 
     const redo_barrier_id = conn.lastInsertedRowId();
