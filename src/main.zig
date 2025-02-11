@@ -139,21 +139,14 @@ pub fn main() !void {
     defer backend.deinit();
 
     // init dvui Window (maps onto a single OS window)
+    var default_theme = theme.default();
     var win = try dvui.Window.init(
         @src(),
         gpa,
         backend.backend(),
-        .{
-            .theme = &theme.default,
-        },
+        .{ .theme = &default_theme },
     );
     defer win.deinit();
-
-    dvui.ButtonWidget.defaults.corner_radius = dvui.Rect.all(0);
-    dvui.ButtonWidget.defaults.border = .{ .h = 3, .w = 3, .x = 1, .y = 1 };
-    dvui.ButtonWidget.defaults.color_accent = .{ .color = dvui.Color.black };
-    dvui.TextEntryWidget.defaults.corner_radius = dvui.Rect.all(0);
-    dvui.FloatingWindowWidget.defaults.corner_radius = dvui.Rect.all(0);
 
     // Add Noto Sans font which supports Vietnamese
     try win.font_bytes.put(
@@ -309,7 +302,7 @@ fn gui_frame(
             .color_accent = .{ .name = .fill_control },
         } else .{};
 
-        if (try dvui.button(@src(), "Undo", .{}, undo_opts)) {
+        if (try theme.button(@src(), "Undo", .{}, undo_opts)) {
             try history.undo(conn, gui_state.history.undos);
         }
 
@@ -321,11 +314,11 @@ fn gui_frame(
             .color_accent = .{ .color = dvui.Color{ .a = 0x00 } },
         } else .{};
 
-        if (try dvui.button(@src(), "Redo", .{}, redo_opts)) {
+        if (try theme.button(@src(), "Redo", .{}, redo_opts)) {
             try history.redo(conn, gui_state.history.redos);
         }
 
-        if (try dvui.button(@src(), "Generate", .{}, .{})) {
+        if (try theme.button(@src(), "Generate", .{}, .{})) {
             var timer = try std.time.Timer.start();
 
             var cwd = std.fs.cwd();
@@ -348,7 +341,7 @@ fn gui_frame(
         .listing => |state| {
             try dvui.label(@src(), "Posts", .{}, .{ .font_style = .title_1 });
 
-            if (try dvui.button(@src(), "New post", .{}, .{})) {
+            if (try theme.button(@src(), "New post", .{}, .{})) {
                 try conn.transaction();
                 errdefer conn.rollback();
 
@@ -368,7 +361,7 @@ fn gui_frame(
                 var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
                 defer hbox.deinit();
 
-                if (try dvui.button(@src(), "Edit", .{}, .{})) {
+                if (try theme.button(@src(), "Edit", .{}, .{})) {
                     try conn.transaction();
                     errdefer conn.rollback();
                     try history.foldRedos(conn, gui_state.history.redos);
@@ -467,7 +460,7 @@ fn gui_frame(
                 // TODO there might be a more elegant way to implement "discard
                 // newly created post if empty".
                 if ((state.post.title.len > 0 or state.post.content.len > 0) and
-                    try dvui.button(@src(), "Back", .{}, .{}))
+                    try theme.button(@src(), "Back", .{}, .{}))
                 {
                     try conn.transaction();
                     errdefer conn.rollback();
@@ -477,7 +470,7 @@ fn gui_frame(
                     try conn.commit();
                 }
 
-                if (try dvui.button(@src(), "Delete", .{}, .{})) {
+                if (try theme.button(@src(), "Delete", .{}, .{})) {
                     try sql.execNoArgs(conn, std.fmt.comptimePrint(
                         "insert into gui_modal(kind) values({d})",
                         .{@intFromEnum(Modal.confirm_post_deletion)},
@@ -504,7 +497,7 @@ fn gui_frame(
                     var hbox = try dvui.box(@src(), .horizontal, .{ .gravity_x = 1.0 });
                     defer hbox.deinit();
 
-                    if (try dvui.button(@src(), "Yes", .{}, .{})) {
+                    if (try theme.button(@src(), "Yes", .{}, .{})) {
                         try conn.transaction();
                         errdefer conn.rollback();
                         try history.foldRedos(conn, gui_state.history.redos);
@@ -520,7 +513,7 @@ fn gui_frame(
                         try conn.commit();
                     }
 
-                    if (try dvui.button(@src(), "No", .{}, .{})) {
+                    if (try theme.button(@src(), "No", .{}, .{})) {
                         try sql.execNoArgs(conn, std.fmt.comptimePrint(
                             "delete from gui_modal where kind={d}",
                             .{@intFromEnum(Modal.confirm_post_deletion)},
