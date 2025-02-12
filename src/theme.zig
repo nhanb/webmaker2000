@@ -16,6 +16,7 @@ pub fn default() dvui.Theme {
     theme.font_title_4 = .{ .size = 22, .name = "NotoBd" };
 
     theme.color_fill_control = theme.color_fill_window;
+    theme.color_fill_hover = dvui.Color.white;
     theme.color_border = dvui.Color.black;
 
     // Unfortunately some settings are configured not through the theme but via
@@ -24,8 +25,6 @@ pub fn default() dvui.Theme {
     // place.
     dvui.ButtonWidget.defaults.corner_radius = dvui.Rect.all(0);
     dvui.ButtonWidget.defaults.border = .{ .h = 3, .w = 3, .x = 1, .y = 1 };
-    //dvui.ButtonWidget.defaults.color_accent = .{ .color = dvui.Color.white };
-    dvui.ButtonWidget.defaults.font = theme.font_caption_heading;
     dvui.ButtonWidget.defaults.padding = .{ .h = 2, .w = 6, .x = 6, .y = 2 };
     dvui.TextEntryWidget.defaults.corner_radius = dvui.Rect.all(0);
     dvui.FloatingWindowWidget.defaults.corner_radius = dvui.Rect.all(0);
