@@ -508,6 +508,14 @@ fn gui_frame(
                             "delete from gui_modal where kind={d}",
                             .{@intFromEnum(Modal.confirm_post_deletion)},
                         ));
+                        try sql.exec(
+                            conn,
+                            \\update gui_status_text
+                            \\set status_text = ?,
+                            \\    expires_at = datetime('now', '+5 seconds')
+                        ,
+                            .{try std.fmt.allocPrint(arena, "Deleted post #{d}", .{state.post.id})},
+                        );
 
                         try history.addUndoBarrier(.delete_post, conn);
                         try conn.commit();
