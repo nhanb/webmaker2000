@@ -58,8 +58,9 @@ create table history_barrier_redo (
 -- TODO remove seed data
 insert into post (title, content) values
     ('First!', 'This is my first post.'),
-    ('Second post', 'Let''s keep this going.
-Shall we?')
+    ('Second post', 'Hello I''m written in [djot](https://djot.net/).
+
+How''s your _day_ going?')
 ;
 
 create table history_enable_triggers (

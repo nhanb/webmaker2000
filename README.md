@@ -3,7 +3,7 @@ Dependencies:
 - Build time: zig 0.14
 - Runtime: libc
 
-Sqlite3 and sdl3 are statically compiled into the executable by default.
+Sqlite3, sdl3 & freetype are statically compiled into the executable by default.
 
 ```sh
 zig build run
@@ -16,7 +16,12 @@ Optionally, add `-fsys=sdl3` to use sdl3 from the system.
 
 # What
 
-This is an experiment in [rubbing sqlite][1] on a desktop GUI:
+Webmaker2000 is a (WIP) cross-platform static site generator with an
+unapologetically simple GUI:
+
+![](screenshot.png)
+
+The implementation is an experiment in [rubbing sqlite][1] on a desktop GUI:
 
 Both data and GUI state are stored in an sqlite3 database, all of which are
 queried every frame. All GUI actions trigger changes to the underlying db

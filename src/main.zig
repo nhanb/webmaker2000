@@ -282,6 +282,7 @@ fn gui_frame(
         .{
             .expand = .both,
             .color_fill = .{ .name = .fill_window },
+            .corner_radius = dvui.Rect.all(0),
         },
     );
     defer scroll.deinit();
@@ -352,6 +353,15 @@ fn gui_frame(
                 try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                 try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
 
+                try sql.exec(
+                    conn,
+                    \\update gui_status_text
+                    \\set status_text = ?,
+                    \\    expires_at = datetime('now', '+5 seconds')
+                ,
+                    .{try std.fmt.allocPrint(arena, "Created post #{d}.", .{new_post_id})},
+                );
+
                 try history.addUndoBarrier(.create_post, conn);
 
                 try conn.commit();
@@ -379,12 +389,10 @@ fn gui_frame(
                 );
             }
 
-            try dvui.label(
-                @src(),
-                "{s}",
-                .{gui_state.status_text},
-                .{ .font_style = .body, .gravity_y = 1 },
-            );
+            try dvui.label(@src(), "{s}", .{gui_state.status_text}, .{
+                .gravity_x = 1,
+                .gravity_y = 1,
+            });
         },
 
         .editing => |state| {
@@ -453,7 +461,7 @@ fn gui_frame(
             content_entry.deinit();
 
             {
-                var hbox = try dvui.box(@src(), .horizontal, .{});
+                var hbox = try dvui.box(@src(), .horizontal, .{ .expand = .horizontal });
                 defer hbox.deinit();
 
                 // Only show "Back" button if post is not empty
@@ -476,9 +484,12 @@ fn gui_frame(
                         .{@intFromEnum(Modal.confirm_post_deletion)},
                     ));
                 }
-            }
 
-            try dvui.label(@src(), "{s}", .{gui_state.status_text}, .{});
+                try dvui.label(@src(), "{s}", .{gui_state.status_text}, .{
+                    .gravity_x = 1,
+                    .gravity_y = 1,
+                });
+            }
 
             // Post deletion confirmation modal:
             if (state.show_confirm_delete) {
@@ -514,7 +525,7 @@ fn gui_frame(
                             \\set status_text = ?,
                             \\    expires_at = datetime('now', '+5 seconds')
                         ,
-                            .{try std.fmt.allocPrint(arena, "Deleted post #{d}", .{state.post.id})},
+                            .{try std.fmt.allocPrint(arena, "Deleted post #{d}.", .{state.post.id})},
                         );
 
                         try history.addUndoBarrier(.delete_post, conn);
