@@ -1,18 +1,3 @@
-Dependencies:
-
-- Build time: zig 0.14
-- Runtime: libc
-
-Sqlite3, sdl3 & freetype are statically compiled into the executable by default.
-
-```sh
-zig build run
-
-# or, to watch:
-find src | entr -rc zig build run
-```
-
-Optionally, add `-fsys=sdl3` to use sdl3 from the system.
 
 # What
 
@@ -34,10 +19,10 @@ instead of mutating any in-memory representation. This sounds expensive, but:
   even when they do, sqlite is [fast][3], especially now that SSDs are the norm.
 
 What we gain is a massively simplified unidirectional state management system,
-and we get autosave for free on every single action. We also get all of the
-benefits of using sqlite as an application file format - off the top of my
-head: atomic writes, easy atomic schema changes, powerful data modelling &
-querying capabilities.
+and we get **autosave** for free on every single action. We also get all of the
+benefits of using sqlite as an application file format, chief among them being
+**persistent undo/redo**, but also atomic writes, easy atomic schema changes,
+powerful data modelling & querying capabilities.
 
 Remaining puzzles for PoC:
 
@@ -46,6 +31,36 @@ Remaining puzzles for PoC:
 - background processing for tasks that take longer than our per-frame budget:
   + handling mid-operation crashes might be tricky?
   + how would it interact with the undo thing?
+
+# Compile
+
+Dependencies:
+
+- Build time: zig 0.14.0-dev.3020+c104e8644 - our dependencies haven't been
+  updated to compile on latest zig nightly (0.14.0-dev.3222+8a3aebaee) yet.
+- Runtime: libc
+
+Statically compiled deps:
+
+- sqlite3
+- sdl3
+- freetype2
+- djot.lua, and obviously, lua
+
+
+```sh
+zig build run
+
+# or, to watch:
+find src | entr -rc zig build run
+
+# optionally, to dynamically link to system libraries:
+zig build -fsys=sdl3 -fsys=freetype -fsys=sqlite3 -fsys=lua
+
+# conversely, to compile a super compatible executable that will Just Work on
+# any GNU/Linux distro that's not older than Debian 10 "Buster":
+zig build -Dtarget=x86_64-linux-gnu.2.28
+```
 
 [1]: https://www.hytradboi.com/2022/building-data-centric-apps-with-a-reactive-relational-database
 [3]: https://www.sqlite.org/faq.html#q19
