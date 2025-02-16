@@ -7,6 +7,7 @@ const history = @import("history.zig");
 const theme = @import("theme.zig");
 const generate = @import("generate.zig");
 const djot = @import("djot.zig");
+const queries = @import("queries.zig");
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
@@ -200,6 +201,24 @@ pub fn main() !void {
     var maybe_db: ?Database = null;
     defer if (maybe_db) |db| db.deinit();
 
+    const argv = try std.process.argsAlloc(gpa);
+    defer std.process.argsFree(gpa, argv);
+    if (argv.len == 2 and std.mem.endsWith(u8, argv[1], "." ++ EXTENSION)) {
+        // TODO: how to handle errors (e.g. file not found) here? We can't draw
+        // anything at this stage.
+
+        const existing_file_path = argv[1];
+        const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
+        maybe_db = try Database.init(gpa, conn, existing_file_path);
+
+        try sql.execNoArgs(conn, "pragma foreign_keys = on");
+
+        // TODO: read user_version pragma to check if the db was initialized
+        // correctly. If not, abort with error message somehow.
+
+        try queries.setStatusText(gpa, conn, "Opened {s}", .{existing_file_path});
+    }
+
     try djot.init(gpa);
     defer djot.deinit();
 
@@ -326,8 +345,7 @@ fn gui_frame(
                         // TODO: read user_version pragma to check if the db was initialized
                         // correctly. If not, abort with error message somehow.
 
-                        // don't want any trailing status text on startup
-                        try sql.execNoArgs(conn, "update gui_status_text set status_text=''");
+                        try queries.setStatusText(arena, conn, "Opened {s}", .{existing_file_path});
                     }
                 }
             }
@@ -413,10 +431,11 @@ fn gui_frame(
                     try generate.all(conn, arena, out_dir);
 
                     const miliseconds = timer.read() / 1_000_000;
-                    try sql.exec(
+                    try queries.setStatusText(
+                        arena,
                         conn,
-                        "update gui_status_text set status_text=?, expires_at = datetime('now', '+5 seconds')",
-                        .{try std.fmt.allocPrint(arena, "Generated static site in {d}ms.", .{miliseconds})},
+                        "Generated static site in {d}ms.",
+                        .{miliseconds},
                     );
                 }
             }
@@ -436,14 +455,7 @@ fn gui_frame(
                         try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                         try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
 
-                        try sql.exec(
-                            conn,
-                            \\update gui_status_text
-                            \\set status_text = ?,
-                            \\    expires_at = datetime('now', '+5 seconds')
-                        ,
-                            .{try std.fmt.allocPrint(arena, "Created post #{d}.", .{new_post_id})},
-                        );
+                        try queries.setStatusText(arena, conn, "Created post #{d}.", .{new_post_id});
 
                         try history.addUndoBarrier(.create_post, conn);
 
@@ -602,13 +614,11 @@ fn gui_frame(
                                     "delete from gui_modal where kind={d}",
                                     .{@intFromEnum(Modal.confirm_post_deletion)},
                                 ));
-                                try sql.exec(
+                                try queries.setStatusText(
+                                    arena,
                                     conn,
-                                    \\update gui_status_text
-                                    \\set status_text = ?,
-                                    \\    expires_at = datetime('now', '+5 seconds')
-                                ,
-                                    .{try std.fmt.allocPrint(arena, "Deleted post #{d}.", .{scene.post.id})},
+                                    "Deleted post #{d}.",
+                                    .{scene.post.id},
                                 );
 
                                 try history.addUndoBarrier(.delete_post, conn);

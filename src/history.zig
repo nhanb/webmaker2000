@@ -1,6 +1,7 @@
 const std = @import("std");
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
+const queries = @import("queries.zig");
 const print = std.debug.print;
 
 pub const Action = enum(i64) {
@@ -226,11 +227,7 @@ pub fn undo(
         .delete_post => "Undo: Delete post.",
         .change_scene => "Undo: Change scene.",
     };
-    try sql.exec(conn,
-        \\update gui_status_text
-        \\set status_text = ?,
-        \\    expires_at = datetime('now', '+5 seconds')
-    , .{status_text});
+    try queries.setStatusTextNoAlloc(conn, status_text);
 }
 
 pub fn getBarriers(
@@ -378,11 +375,7 @@ pub fn redo(
         .delete_post => "Redo: Delete post.",
         .change_scene => "Redo: Change scene.",
     };
-    try sql.exec(conn,
-        \\update gui_status_text
-        \\set status_text = ?,
-        \\    expires_at = datetime('now', '+5 seconds')
-    , .{status_text});
+    try queries.setStatusTextNoAlloc(conn, status_text);
 }
 
 // The heart of emacs-style undo-redo: when the user performs an undo, then
