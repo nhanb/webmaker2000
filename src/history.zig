@@ -46,14 +46,10 @@ pub const Redo = HistoryType{
 pub fn createTriggers(
     comptime htype: HistoryType,
     conn: zqlite.Conn,
-    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
 ) !void {
     var timer = try std.time.Timer.start();
     defer std.debug.print("** createTriggers() took {}ms\n", .{timer.read() / 1_000_000});
-
-    var arena_instance = std.heap.ArenaAllocator.init(gpa);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
 
     inline for (HISTORY_TABLES) |table| {
         // First colect this table's column names

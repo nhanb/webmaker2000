@@ -14,7 +14,8 @@ comptime {
 const Backend = dvui.backend;
 
 // TODO: read path from argv instead
-const DB_PATH = "Site1.wm2k";
+const EXTENSION = "wm2k";
+const DB_PATH = "Site1." ++ EXTENSION;
 const OUT_PATH = std.fs.path.stem(DB_PATH);
 
 const Post = struct {
@@ -42,15 +43,20 @@ const Modal = enum(i64) {
     confirm_post_deletion = 0,
 };
 
-const GuiState = struct {
-    scene: SceneState,
-    status_text: []const u8,
-    history: struct {
-        undos: []history.Barrier,
-        redos: []history.Barrier,
+const GuiState = union(enum) {
+    no_file_opened: void,
+    opened: struct {
+        scene: SceneState,
+        status_text: []const u8,
+        history: struct {
+            undos: []history.Barrier,
+            redos: []history.Barrier,
+        },
     },
 
-    fn read(conn: zqlite.Conn, arena: std.mem.Allocator) !GuiState {
+    fn read(maybe_conn: ?zqlite.Conn, arena: std.mem.Allocator) !GuiState {
+        const conn = maybe_conn orelse return .no_file_opened;
+
         const current_scene: Scene = @enumFromInt(
             try sql.selectInt(conn, "select current_scene from gui_scene"),
         );
@@ -112,12 +118,14 @@ const GuiState = struct {
             break :blk try arena.dupe(u8, row.text(0));
         } else "";
 
-        return GuiState{
-            .scene = scene,
-            .status_text = status_text,
-            .history = .{
-                .undos = try history.getBarriers(history.Undo, conn, arena),
-                .redos = try history.getBarriers(history.Redo, conn, arena),
+        return .{
+            .opened = .{
+                .scene = scene,
+                .status_text = status_text,
+                .history = .{
+                    .undos = try history.getBarriers(history.Undo, conn, arena),
+                    .redos = try history.getBarriers(history.Redo, conn, arena),
+                },
             },
         };
     }
@@ -168,38 +176,8 @@ pub fn main() !void {
     try win.keybinds.putNoClobber("wm2k_undo", .{ .control = true, .shift = false, .key = .z });
     try win.keybinds.putNoClobber("wm2k_redo", .{ .control = true, .shift = true, .key = .z });
 
-    // Attempt to open db file at `path`.
-    // If it doesn't exist, create and initialize its schema.
-
-    var is_new_db = false;
-    const conn = zqlite.open(DB_PATH, zqlite.OpenFlags.EXResCode) catch |err| blk: {
-        if (err == error.CantOpen) {
-            is_new_db = true;
-            break :blk try zqlite.open(
-                DB_PATH,
-                zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.Create,
-            );
-        }
-        return err;
-    };
-
-    try sql.execNoArgs(conn, "pragma foreign_keys = on");
-
-    if (is_new_db) {
-        try sql.execNoArgs(conn, "begin exclusive");
-        try sql.execNoArgs(conn, @embedFile("db_schema.sql"));
-        try history.createTriggers(history.Undo, conn, gpa);
-        try history.createTriggers(history.Redo, conn, gpa);
-        try sql.execNoArgs(conn, "commit");
-    } else {
-        // TODO: read user_version pragma to check if the db was initialized
-        // correctly. If not, abort with error message somehow.
-    }
-
-    defer conn.close();
-
-    // don't want any trailing status text on startup
-    try sql.execNoArgs(conn, "update gui_status_text set status_text=''");
+    var maybe_conn: ?zqlite.Conn = null;
+    defer if (maybe_conn) |conn| conn.close();
 
     try djot.init(gpa);
     defer djot.deinit();
@@ -215,7 +193,7 @@ pub fn main() !void {
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
-        const gui_state = try GuiState.read(conn, arena.allocator());
+        const gui_state = try GuiState.read(maybe_conn, arena.allocator());
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -232,7 +210,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        try gui_frame(&gui_state, arena.allocator(), conn);
+        try gui_frame(&gui_state, arena.allocator(), &maybe_conn);
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -254,291 +232,369 @@ pub fn main() !void {
 fn gui_frame(
     gui_state: *const GuiState,
     arena: std.mem.Allocator,
-    conn: zqlite.Conn,
+    maybe_conn: *?zqlite.Conn,
 ) !void {
+    var background = try dvui.overlay(@src(), .{
+        .expand = .both,
+        .background = true,
+        .color_fill = .{ .name = .fill_window },
+    });
+    defer background.deinit();
 
-    // Handle keyboard shortcuts
-    const evts = dvui.events();
-    for (evts) |*e| {
-        switch (e.evt) {
-            .key => |key| {
-                if (key.action == .down) {
-                    if (key.matchBind("wm2k_undo")) {
-                        try history.undo(conn, gui_state.history.undos);
-                    } else if (key.matchBind("wm2k_redo")) {
-                        try history.redo(conn, gui_state.history.redos);
-                    }
-                }
-            },
-            else => {},
-        }
-    }
+    switch (gui_state.*) {
 
-    // Actual GUI starts here
-
-    var scroll = try dvui.scrollArea(
-        @src(),
-        .{},
-        .{
-            .expand = .both,
-            .color_fill = .{ .name = .fill_window },
-            .corner_radius = dvui.Rect.all(0),
-        },
-    );
-    defer scroll.deinit();
-
-    {
-        var toolbar = try dvui.box(
-            @src(),
-            .horizontal,
-            .{ .expand = .horizontal },
-        );
-        defer toolbar.deinit();
-
-        const undo_opts: dvui.Options = if (gui_state.history.undos.len == 0) .{
-            .color_text = .{ .name = .fill_press },
-            .color_text_press = .{ .name = .fill_press },
-            .color_fill_hover = .{ .name = .fill_control },
-            .color_fill_press = .{ .name = .fill_control },
-            .color_accent = .{ .name = .fill_control },
-        } else .{};
-
-        if (try theme.button(@src(), "Undo", .{}, undo_opts)) {
-            try history.undo(conn, gui_state.history.undos);
-        }
-
-        const redo_opts: dvui.Options = if (gui_state.history.redos.len == 0) .{
-            .color_text = .{ .name = .fill_press },
-            .color_text_press = .{ .name = .fill_press },
-            .color_fill_hover = .{ .name = .fill_control },
-            .color_fill_press = .{ .name = .fill_control },
-            .color_accent = .{ .color = dvui.Color{ .a = 0x00 } },
-        } else .{};
-
-        if (try theme.button(@src(), "Redo", .{}, redo_opts)) {
-            try history.redo(conn, gui_state.history.redos);
-        }
-
-        if (try theme.button(@src(), "Generate", .{}, .{})) {
-            var timer = try std.time.Timer.start();
-
-            var cwd = std.fs.cwd();
-            try cwd.deleteTree(OUT_PATH);
-
-            var out_dir = try cwd.makeOpenPath(OUT_PATH, .{});
-            defer out_dir.close();
-            try generate.all(conn, arena, out_dir);
-
-            const miliseconds = timer.read() / 1_000_000;
-            try sql.exec(
-                conn,
-                "update gui_status_text set status_text=?, expires_at = datetime('now', '+5 seconds')",
-                .{try std.fmt.allocPrint(arena, "Generated static site in {d}ms.", .{miliseconds})},
-            );
-        }
-    }
-
-    switch (gui_state.scene) {
-        .listing => |state| {
-            try dvui.label(@src(), "Posts", .{}, .{ .font_style = .title_1 });
-
-            if (try theme.button(@src(), "New post", .{}, .{})) {
-                try conn.transaction();
-                errdefer conn.rollback();
-
-                try history.foldRedos(conn, gui_state.history.redos);
-
-                try sql.execNoArgs(conn, "insert into post default values");
-                const new_post_id = conn.lastInsertedRowId();
-                try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
-                try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
-
-                try sql.exec(
-                    conn,
-                    \\update gui_status_text
-                    \\set status_text = ?,
-                    \\    expires_at = datetime('now', '+5 seconds')
-                ,
-                    .{try std.fmt.allocPrint(arena, "Created post #{d}.", .{new_post_id})},
-                );
-
-                try history.addUndoBarrier(.create_post, conn);
-
-                try conn.commit();
-            }
-
-            for (state.posts, 0..) |post, i| {
-                var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
-                defer hbox.deinit();
-
-                if (try theme.button(@src(), "Edit", .{}, .{})) {
-                    try conn.transaction();
-                    errdefer conn.rollback();
-                    try history.foldRedos(conn, gui_state.history.redos);
-                    try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
-                    try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post.id});
-                    try history.addUndoBarrier(.change_scene, conn);
-                    try conn.commit();
-                }
-
-                try dvui.label(
-                    @src(),
-                    "{d}. {s}",
-                    .{ post.id, post.title },
-                    .{ .id_extra = i, .gravity_y = 0.5 },
-                );
-            }
-
-            try dvui.label(@src(), "{s}", .{gui_state.status_text}, .{
-                .gravity_x = 1,
-                .gravity_y = 1,
+        // Let user either create new or open existing wm2k file:
+        .no_file_opened => {
+            var vbox = try dvui.box(@src(), .vertical, .{
+                .gravity_x = 0.5,
+                .gravity_y = 0.5,
             });
-        },
-
-        .editing => |state| {
-            var vbox = try dvui.box(
-                @src(),
-                .vertical,
-                .{ .expand = .both },
-            );
             defer vbox.deinit();
 
-            try dvui.label(@src(), "Editing post #{d}", .{state.post.id}, .{ .font_style = .title_1 });
-
-            var title_buf: []u8 = state.post.title;
-            var content_buf: []u8 = state.post.content;
-
-            try dvui.label(@src(), "Title:", .{}, .{});
-            var title_entry = try dvui.textEntry(
-                @src(),
-                .{
-                    .text = .{
-                        .buffer_dynamic = .{
-                            .backing = &title_buf,
-                            .allocator = arena,
-                        },
-                    },
-                },
-                .{ .expand = .horizontal },
-            );
-            if (title_entry.text_changed) {
-                try conn.transaction();
-                errdefer conn.rollback();
-                defer conn.commit() catch unreachable;
-                try history.foldRedos(conn, gui_state.history.redos);
-                try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), state.post.id });
-                try history.addUndoBarrier(.update_post_title, conn);
-            }
-            title_entry.deinit();
-
-            try dvui.label(@src(), "Content:", .{}, .{});
-            var content_entry = try dvui.textEntry(
-                @src(),
-                .{
-                    .multiline = true,
-                    .break_lines = true,
-                    .scroll_horizontal = false,
-                    .text = .{
-                        .buffer_dynamic = .{
-                            .backing = &content_buf,
-                            .allocator = arena,
-                        },
-                    },
-                },
-                .{
-                    .expand = .both,
-                    .min_size_content = .{ .h = 80 },
-                },
-            );
-            if (content_entry.text_changed) {
-                try conn.transaction();
-                errdefer conn.rollback();
-                try history.foldRedos(conn, gui_state.history.redos);
-                try sql.exec(conn, "update post set content=? where id=?", .{ content_entry.getText(), state.post.id });
-                try history.addUndoBarrier(.update_post_content, conn);
-                try conn.commit();
-            }
-            content_entry.deinit();
+            try dvui.label(@src(), "Would you like to create a new site or open an existing one?", .{}, .{});
 
             {
-                var hbox = try dvui.box(@src(), .horizontal, .{ .expand = .horizontal });
+                var hbox = try dvui.box(@src(), .horizontal, .{
+                    .expand = .both,
+                    .gravity_x = 0.5,
+                    .gravity_y = 0.5,
+                });
                 defer hbox.deinit();
 
-                // Only show "Back" button if post is not empty
-                // TODO there might be a more elegant way to implement "discard
-                // newly created post if empty".
-                if ((state.post.title.len > 0 or state.post.content.len > 0) and
-                    try theme.button(@src(), "Back", .{}, .{}))
-                {
-                    try conn.transaction();
-                    errdefer conn.rollback();
-                    try history.foldRedos(conn, gui_state.history.redos);
-                    try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
-                    try history.addUndoBarrier(.change_scene, conn);
-                    try conn.commit();
+                if (try dvui.button(@src(), "New...", .{}, .{})) {
+                    if (try dvui.dialogNativeFileSave(arena, .{
+                        .title = "Create new site",
+                        .filters = &.{"*." ++ EXTENSION},
+                    })) |new_file_path| {
+                        // Assuming the native "save file" dialog has
+                        // already asked for user confirmation if the chosen
+                        // file already exists, we can safely delete it now:
+                        try std.fs.deleteFileAbsolute(new_file_path);
+
+                        const conn = try zqlite.open(
+                            new_file_path,
+                            zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.Create,
+                        );
+                        maybe_conn.* = conn;
+
+                        try sql.execNoArgs(conn, "pragma foreign_keys = on");
+
+                        try sql.execNoArgs(conn, "begin exclusive");
+                        try sql.execNoArgs(conn, @embedFile("db_schema.sql"));
+                        try history.createTriggers(history.Undo, conn, arena);
+                        try history.createTriggers(history.Redo, conn, arena);
+                        try sql.execNoArgs(conn, "commit");
+                    }
                 }
 
-                if (try theme.button(@src(), "Delete", .{}, .{})) {
-                    try sql.execNoArgs(conn, std.fmt.comptimePrint(
-                        "insert into gui_modal(kind) values({d})",
-                        .{@intFromEnum(Modal.confirm_post_deletion)},
-                    ));
-                }
+                if (try dvui.button(@src(), "Open...", .{}, .{})) {
+                    if (try dvui.dialogNativeFileOpen(arena, .{
+                        .title = "Open site",
+                        .filters = &.{"*." ++ EXTENSION},
+                    })) |existing_file_path| {
+                        const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
+                        maybe_conn.* = conn;
 
-                try dvui.label(@src(), "{s}", .{gui_state.status_text}, .{
-                    .gravity_x = 1,
-                    .gravity_y = 1,
-                });
+                        try sql.execNoArgs(conn, "pragma foreign_keys = on");
+
+                        // TODO: read user_version pragma to check if the db was initialized
+                        // correctly. If not, abort with error message somehow.
+
+                        // don't want any trailing status text on startup
+                        try sql.execNoArgs(conn, "update gui_status_text set status_text=''");
+                    }
+                }
+            }
+        },
+
+        // User has actually opened a file => show main UI:
+        .opened => |state| {
+            const conn = maybe_conn.*.?;
+
+            // Handle keyboard shortcuts
+            const evts = dvui.events();
+            for (evts) |*e| {
+                switch (e.evt) {
+                    .key => |key| {
+                        if (key.action == .down) {
+                            if (key.matchBind("wm2k_undo")) {
+                                try history.undo(conn, state.history.undos);
+                            } else if (key.matchBind("wm2k_redo")) {
+                                try history.redo(conn, state.history.redos);
+                            }
+                        }
+                    },
+                    else => {},
+                }
             }
 
-            // Post deletion confirmation modal:
-            if (state.show_confirm_delete) {
-                var modal = try dvui.floatingWindow(
+            // Actual GUI starts here
+
+            var scroll = try dvui.scrollArea(
+                @src(),
+                .{},
+                .{
+                    .expand = .both,
+                    .color_fill = .{ .name = .fill_window },
+                    .corner_radius = dvui.Rect.all(0),
+                },
+            );
+            defer scroll.deinit();
+
+            {
+                var toolbar = try dvui.box(
                     @src(),
-                    .{ .modal = true },
-                    .{ .max_size_content = .{ .w = 500 } },
+                    .horizontal,
+                    .{ .expand = .horizontal },
                 );
-                defer modal.deinit();
+                defer toolbar.deinit();
 
-                try dvui.windowHeader("Confirm deletion", "", null);
-                try dvui.label(@src(), "Are you sure you want to delete this post?", .{}, .{});
+                const undo_opts: dvui.Options = if (state.history.undos.len == 0) .{
+                    .color_text = .{ .name = .fill_press },
+                    .color_text_press = .{ .name = .fill_press },
+                    .color_fill_hover = .{ .name = .fill_control },
+                    .color_fill_press = .{ .name = .fill_control },
+                    .color_accent = .{ .name = .fill_control },
+                } else .{};
 
-                {
-                    _ = try dvui.spacer(@src(), .{}, .{ .expand = .vertical });
-                    var hbox = try dvui.box(@src(), .horizontal, .{ .gravity_x = 1.0 });
-                    defer hbox.deinit();
+                if (try theme.button(@src(), "Undo", .{}, undo_opts)) {
+                    try history.undo(conn, state.history.undos);
+                }
 
-                    if (try theme.button(@src(), "Yes", .{}, .{})) {
+                const redo_opts: dvui.Options = if (state.history.redos.len == 0) .{
+                    .color_text = .{ .name = .fill_press },
+                    .color_text_press = .{ .name = .fill_press },
+                    .color_fill_hover = .{ .name = .fill_control },
+                    .color_fill_press = .{ .name = .fill_control },
+                    .color_accent = .{ .color = dvui.Color{ .a = 0x00 } },
+                } else .{};
+
+                if (try theme.button(@src(), "Redo", .{}, redo_opts)) {
+                    try history.redo(conn, state.history.redos);
+                }
+
+                if (try theme.button(@src(), "Generate", .{}, .{})) {
+                    var timer = try std.time.Timer.start();
+
+                    var cwd = std.fs.cwd();
+                    try cwd.deleteTree(OUT_PATH);
+
+                    var out_dir = try cwd.makeOpenPath(OUT_PATH, .{});
+                    defer out_dir.close();
+                    try generate.all(conn, arena, out_dir);
+
+                    const miliseconds = timer.read() / 1_000_000;
+                    try sql.exec(
+                        conn,
+                        "update gui_status_text set status_text=?, expires_at = datetime('now', '+5 seconds')",
+                        .{try std.fmt.allocPrint(arena, "Generated static site in {d}ms.", .{miliseconds})},
+                    );
+                }
+            }
+
+            switch (state.scene) {
+                .listing => |scene| {
+                    try dvui.label(@src(), "Posts", .{}, .{ .font_style = .title_1 });
+
+                    if (try theme.button(@src(), "New post", .{}, .{})) {
                         try conn.transaction();
                         errdefer conn.rollback();
-                        try history.foldRedos(conn, gui_state.history.redos);
 
-                        try sql.exec(conn, "delete from post where id=?", .{state.post.id});
-                        try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
-                        try sql.execNoArgs(conn, std.fmt.comptimePrint(
-                            "delete from gui_modal where kind={d}",
-                            .{@intFromEnum(Modal.confirm_post_deletion)},
-                        ));
+                        try history.foldRedos(conn, state.history.redos);
+
+                        try sql.execNoArgs(conn, "insert into post default values");
+                        const new_post_id = conn.lastInsertedRowId();
+                        try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                        try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
+
                         try sql.exec(
                             conn,
                             \\update gui_status_text
                             \\set status_text = ?,
                             \\    expires_at = datetime('now', '+5 seconds')
                         ,
-                            .{try std.fmt.allocPrint(arena, "Deleted post #{d}.", .{state.post.id})},
+                            .{try std.fmt.allocPrint(arena, "Created post #{d}.", .{new_post_id})},
                         );
 
-                        try history.addUndoBarrier(.delete_post, conn);
+                        try history.addUndoBarrier(.create_post, conn);
+
                         try conn.commit();
                     }
 
-                    if (try theme.button(@src(), "No", .{}, .{})) {
-                        try sql.execNoArgs(conn, std.fmt.comptimePrint(
-                            "delete from gui_modal where kind={d}",
-                            .{@intFromEnum(Modal.confirm_post_deletion)},
-                        ));
+                    for (scene.posts, 0..) |post, i| {
+                        var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
+                        defer hbox.deinit();
+
+                        if (try theme.button(@src(), "Edit", .{}, .{})) {
+                            try conn.transaction();
+                            errdefer conn.rollback();
+                            try history.foldRedos(conn, state.history.redos);
+                            try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                            try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post.id});
+                            try history.addUndoBarrier(.change_scene, conn);
+                            try conn.commit();
+                        }
+
+                        try dvui.label(
+                            @src(),
+                            "{d}. {s}",
+                            .{ post.id, post.title },
+                            .{ .id_extra = i, .gravity_y = 0.5 },
+                        );
                     }
-                }
+
+                    try dvui.label(@src(), "{s}", .{state.status_text}, .{
+                        .gravity_x = 1,
+                        .gravity_y = 1,
+                    });
+                },
+
+                .editing => |scene| {
+                    var vbox = try dvui.box(
+                        @src(),
+                        .vertical,
+                        .{ .expand = .both },
+                    );
+                    defer vbox.deinit();
+
+                    try dvui.label(@src(), "Editing post #{d}", .{scene.post.id}, .{ .font_style = .title_1 });
+
+                    var title_buf: []u8 = scene.post.title;
+                    var content_buf: []u8 = scene.post.content;
+
+                    try dvui.label(@src(), "Title:", .{}, .{});
+                    var title_entry = try dvui.textEntry(
+                        @src(),
+                        .{
+                            .text = .{
+                                .buffer_dynamic = .{
+                                    .backing = &title_buf,
+                                    .allocator = arena,
+                                },
+                            },
+                        },
+                        .{ .expand = .horizontal },
+                    );
+                    if (title_entry.text_changed) {
+                        try conn.transaction();
+                        errdefer conn.rollback();
+                        defer conn.commit() catch unreachable;
+                        try history.foldRedos(conn, state.history.redos);
+                        try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), scene.post.id });
+                        try history.addUndoBarrier(.update_post_title, conn);
+                    }
+                    title_entry.deinit();
+
+                    try dvui.label(@src(), "Content:", .{}, .{});
+                    var content_entry = try dvui.textEntry(
+                        @src(),
+                        .{
+                            .multiline = true,
+                            .break_lines = true,
+                            .scroll_horizontal = false,
+                            .text = .{
+                                .buffer_dynamic = .{
+                                    .backing = &content_buf,
+                                    .allocator = arena,
+                                },
+                            },
+                        },
+                        .{
+                            .expand = .both,
+                            .min_size_content = .{ .h = 80 },
+                        },
+                    );
+                    if (content_entry.text_changed) {
+                        try conn.transaction();
+                        errdefer conn.rollback();
+                        try history.foldRedos(conn, state.history.redos);
+                        try sql.exec(conn, "update post set content=? where id=?", .{ content_entry.getText(), scene.post.id });
+                        try history.addUndoBarrier(.update_post_content, conn);
+                        try conn.commit();
+                    }
+                    content_entry.deinit();
+
+                    {
+                        var hbox = try dvui.box(@src(), .horizontal, .{ .expand = .horizontal });
+                        defer hbox.deinit();
+
+                        // Only show "Back" button if post is not empty
+                        // TODO there might be a more elegant way to implement "discard
+                        // newly created post if empty".
+                        if ((scene.post.title.len > 0 or scene.post.content.len > 0) and
+                            try theme.button(@src(), "Back", .{}, .{}))
+                        {
+                            try conn.transaction();
+                            errdefer conn.rollback();
+                            try history.foldRedos(conn, state.history.redos);
+                            try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
+                            try history.addUndoBarrier(.change_scene, conn);
+                            try conn.commit();
+                        }
+
+                        if (try theme.button(@src(), "Delete", .{}, .{})) {
+                            try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                                "insert into gui_modal(kind) values({d})",
+                                .{@intFromEnum(Modal.confirm_post_deletion)},
+                            ));
+                        }
+
+                        try dvui.label(@src(), "{s}", .{state.status_text}, .{
+                            .gravity_x = 1,
+                            .gravity_y = 1,
+                        });
+                    }
+
+                    // Post deletion confirmation modal:
+                    if (scene.show_confirm_delete) {
+                        var modal = try dvui.floatingWindow(
+                            @src(),
+                            .{ .modal = true },
+                            .{ .max_size_content = .{ .w = 500 } },
+                        );
+                        defer modal.deinit();
+
+                        try dvui.windowHeader("Confirm deletion", "", null);
+                        try dvui.label(@src(), "Are you sure you want to delete this post?", .{}, .{});
+
+                        {
+                            _ = try dvui.spacer(@src(), .{}, .{ .expand = .vertical });
+                            var hbox = try dvui.box(@src(), .horizontal, .{ .gravity_x = 1.0 });
+                            defer hbox.deinit();
+
+                            if (try theme.button(@src(), "Yes", .{}, .{})) {
+                                try conn.transaction();
+                                errdefer conn.rollback();
+                                try history.foldRedos(conn, state.history.redos);
+
+                                try sql.exec(conn, "delete from post where id=?", .{scene.post.id});
+                                try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
+                                try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                                    "delete from gui_modal where kind={d}",
+                                    .{@intFromEnum(Modal.confirm_post_deletion)},
+                                ));
+                                try sql.exec(
+                                    conn,
+                                    \\update gui_status_text
+                                    \\set status_text = ?,
+                                    \\    expires_at = datetime('now', '+5 seconds')
+                                ,
+                                    .{try std.fmt.allocPrint(arena, "Deleted post #{d}.", .{scene.post.id})},
+                                );
+
+                                try history.addUndoBarrier(.delete_post, conn);
+                                try conn.commit();
+                            }
+
+                            if (try theme.button(@src(), "No", .{}, .{})) {
+                                try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                                    "delete from gui_modal where kind={d}",
+                                    .{@intFromEnum(Modal.confirm_post_deletion)},
+                                ));
+                            }
+                        }
+                    }
+                },
             }
         },
     }
