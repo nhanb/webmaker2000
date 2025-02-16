@@ -13,10 +13,7 @@ comptime {
 }
 const Backend = dvui.backend;
 
-// TODO: read path from argv instead
 const EXTENSION = "wm2k";
-const DB_PATH = "Site1." ++ EXTENSION;
-const OUT_PATH = std.fs.path.stem(DB_PATH);
 
 const Post = struct {
     id: i64,
@@ -43,6 +40,29 @@ const Modal = enum(i64) {
     confirm_post_deletion = 0,
 };
 
+const Database = struct {
+    gpa: std.mem.Allocator,
+    conn: zqlite.Conn,
+    file_path: []const u8,
+
+    fn output_path(self: Database) []const u8 {
+        return self.file_path[0 .. self.file_path.len - 1 - EXTENSION.len];
+    }
+
+    fn init(gpa: std.mem.Allocator, conn: zqlite.Conn, file_path: []const u8) !Database {
+        return .{
+            .gpa = gpa,
+            .conn = conn,
+            .file_path = try gpa.dupe(u8, file_path),
+        };
+    }
+
+    fn deinit(self: Database) void {
+        self.conn.close();
+        self.gpa.free(self.file_path);
+    }
+};
+
 const GuiState = union(enum) {
     no_file_opened: void,
     opened: struct {
@@ -54,8 +74,9 @@ const GuiState = union(enum) {
         },
     },
 
-    fn read(maybe_conn: ?zqlite.Conn, arena: std.mem.Allocator) !GuiState {
-        const conn = maybe_conn orelse return .no_file_opened;
+    fn read(maybe_db: ?Database, arena: std.mem.Allocator) !GuiState {
+        const db = maybe_db orelse return .no_file_opened;
+        const conn = db.conn;
 
         const current_scene: Scene = @enumFromInt(
             try sql.selectInt(conn, "select current_scene from gui_scene"),
@@ -176,8 +197,8 @@ pub fn main() !void {
     try win.keybinds.putNoClobber("wm2k_undo", .{ .control = true, .shift = false, .key = .z });
     try win.keybinds.putNoClobber("wm2k_redo", .{ .control = true, .shift = true, .key = .z });
 
-    var maybe_conn: ?zqlite.Conn = null;
-    defer if (maybe_conn) |conn| conn.close();
+    var maybe_db: ?Database = null;
+    defer if (maybe_db) |db| db.deinit();
 
     try djot.init(gpa);
     defer djot.deinit();
@@ -193,7 +214,7 @@ pub fn main() !void {
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
-        const gui_state = try GuiState.read(maybe_conn, arena.allocator());
+        const gui_state = try GuiState.read(maybe_db, arena.allocator());
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -210,7 +231,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        try gui_frame(&gui_state, arena.allocator(), &maybe_conn);
+        try gui_frame(&gui_state, &maybe_db, arena.allocator(), gpa);
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -231,8 +252,9 @@ pub fn main() !void {
 
 fn gui_frame(
     gui_state: *const GuiState,
+    maybe_db: *?Database,
     arena: std.mem.Allocator,
-    maybe_conn: *?zqlite.Conn,
+    gpa: std.mem.Allocator, // for data that needs to survive to next frame
 ) !void {
     var background = try dvui.overlay(@src(), .{
         .expand = .both,
@@ -269,13 +291,17 @@ fn gui_frame(
                         // Assuming the native "save file" dialog has
                         // already asked for user confirmation if the chosen
                         // file already exists, we can safely delete it now:
-                        try std.fs.deleteFileAbsolute(new_file_path);
+                        std.fs.deleteFileAbsolute(new_file_path) catch |err| {
+                            if (err != error.FileNotFound) {
+                                return err;
+                            }
+                        };
 
                         const conn = try zqlite.open(
                             new_file_path,
                             zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.Create,
                         );
-                        maybe_conn.* = conn;
+                        maybe_db.* = try Database.init(gpa, conn, new_file_path);
 
                         try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
@@ -293,7 +319,7 @@ fn gui_frame(
                         .filters = &.{"*." ++ EXTENSION},
                     })) |existing_file_path| {
                         const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
-                        maybe_conn.* = conn;
+                        maybe_db.* = try Database.init(gpa, conn, existing_file_path);
 
                         try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
@@ -309,7 +335,8 @@ fn gui_frame(
 
         // User has actually opened a file => show main UI:
         .opened => |state| {
-            const conn = maybe_conn.*.?;
+            const db = maybe_db.*.?;
+            const conn = db.conn;
 
             // Handle keyboard shortcuts
             const evts = dvui.events();
@@ -376,10 +403,12 @@ fn gui_frame(
                 if (try theme.button(@src(), "Generate", .{}, .{})) {
                     var timer = try std.time.Timer.start();
 
-                    var cwd = std.fs.cwd();
-                    try cwd.deleteTree(OUT_PATH);
+                    const output_path = db.output_path();
 
-                    var out_dir = try cwd.makeOpenPath(OUT_PATH, .{});
+                    var cwd = std.fs.cwd();
+                    try cwd.deleteTree(output_path);
+
+                    var out_dir = try cwd.makeOpenPath(output_path, .{});
                     defer out_dir.close();
                     try generate.all(conn, arena, out_dir);
 
