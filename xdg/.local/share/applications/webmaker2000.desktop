@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=WebMaker2000
+Comment=Desktop web publishing application
+#Path=/opt/webmaker2000
+Exec=/usr/bin/wm2k
+Icon=webmaker2000
+MimeType=application/webmaker2000;
+Terminal=false
+Categories=Development;

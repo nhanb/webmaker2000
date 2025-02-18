@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="33.580257mm"
+   height="48.764812mm"
+   viewBox="0 0 33.580257 48.764812"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   sodipodi:docname="application-webmaker2000.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="3.0312143"
+     inkscape:cx="129.81596"
+     inkscape:cy="172.37316"
+     inkscape:window-width="2502"
+     inkscape:window-height="1412"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1">
+    <inkscape:page
+       x="0"
+       y="0"
+       width="33.580257"
+       height="48.764812"
+       id="page2"
+       margin="0"
+       bleed="0" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-44.006631,-91.725809)">
+    <rect
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:1.85208;stroke-opacity:1"
+       id="rect2"
+       width="31.728182"
+       height="46.912724"
+       x="44.932671"
+       y="92.651848"
+       ry="0"
+       rx="0"
+       inkscape:export-filename="mime.svg"
+       inkscape:export-xdpi="68.949997"
+       inkscape:export-ydpi="68.949997"
+       inkscape:label="bg" />
+    <circle
+       style="fill:#ffffff;fill-opacity:1;stroke:#000000;stroke-width:1.85208;stroke-dasharray:none;stroke-opacity:1"
+       id="path2"
+       cx="56.132351"
+       cy="104.01888"
+       r="10.862844"
+       inkscape:export-filename="favicon.png"
+       inkscape:export-xdpi="68.949997"
+       inkscape:export-ydpi="68.949997"
+       inkscape:label="o" />
+    <text
+       xml:space="preserve"
+       style="font-size:15.6391px;text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:none;stroke:#000000;stroke-width:0.325814;stroke-dasharray:none;stroke-opacity:1"
+       x="48.751888"
+       y="109.92771"
+       id="text2"
+       inkscape:label="w"><tspan
+         sodipodi:role="line"
+         id="tspan2"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:15.6391px;font-family:Arimo;-inkscape-font-specification:'Arimo Bold';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.325814;stroke-dasharray:none"
+         x="48.751888"
+         y="109.92771">W</tspan></text>
+  </g>
+</svg>

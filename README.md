@@ -62,5 +62,11 @@ zig build -fsys=sdl3 -fsys=freetype -fsys=sqlite3 -fsys=lua
 zig build -Dtarget=x86_64-linux-gnu.2.28
 ```
 
+# Linux desktop integration
+
+Copy files from `./xdg` into your $HOME, or symlink using [stow][stow]:
+`stow --no-folding --verbose=1 -t $HOME xdg`
+
 [1]: https://www.hytradboi.com/2022/building-data-centric-apps-with-a-reactive-relational-database
 [3]: https://www.sqlite.org/faq.html#q19
+[stow]: https://www.gnu.org/software/stow/

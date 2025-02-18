@@ -165,6 +165,7 @@ pub fn main() !void {
         .min_size = .{ .w = 250.0, .h = 350.0 },
         .vsync = true,
         .title = "WebMaker2000",
+        .icon = @embedFile("favicon.png"),
     });
     defer backend.deinit();
 

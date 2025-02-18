@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+    <mime-type type="application/webmaker2000">
+        <comment>WebMaker2000 file</comment>
+        <icon name="application-webmaker2000"/>
+        <glob-deleteall/>
+        <glob pattern="*.wm2k"/>
+    </mime-type>
+</mime-info>
