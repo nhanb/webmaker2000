@@ -162,7 +162,7 @@ pub fn main() !void {
     var backend = try Backend.initWindow(.{
         .allocator = gpa,
         .size = .{ .w = 800.0, .h = 600.0 },
-        .min_size = .{ .w = 250.0, .h = 350.0 },
+        .min_size = .{ .w = 500.0, .h = 350.0 },
         .vsync = true,
         .title = "WebMaker2000",
         .icon = @embedFile("favicon.png"),
@@ -217,7 +217,11 @@ pub fn main() !void {
         // TODO: read user_version pragma to check if the db was initialized
         // correctly. If not, abort with error message somehow.
 
+        const filename = std.fs.path.basename(existing_file_path);
         try queries.setStatusText(gpa, conn, "Opened {s}", .{existing_file_path});
+        const window_title = try std.fmt.allocPrintZ(gpa, "{s} - WebMaker2000", .{filename});
+        defer gpa.free(window_title);
+        _ = Backend.c.SDL_SetWindowTitle(backend.window, window_title);
     }
 
     try djot.init(gpa);
@@ -251,7 +255,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        try gui_frame(&gui_state, &maybe_db, arena.allocator(), gpa);
+        try gui_frame(&gui_state, &maybe_db, &backend, arena.allocator(), gpa);
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -273,6 +277,7 @@ pub fn main() !void {
 fn gui_frame(
     gui_state: *const GuiState,
     maybe_db: *?Database,
+    backend: *dvui.backend,
     arena: std.mem.Allocator,
     gpa: std.mem.Allocator, // for data that needs to survive to next frame
 ) !void {
@@ -330,6 +335,13 @@ fn gui_frame(
                         try history.createTriggers(history.Undo, conn, arena);
                         try history.createTriggers(history.Redo, conn, arena);
                         try sql.execNoArgs(conn, "commit");
+
+                        const filename = std.fs.path.basename(new_file_path);
+                        try queries.setStatusText(arena, conn, "Created {s}", .{filename});
+                        _ = Backend.c.SDL_SetWindowTitle(
+                            backend.window,
+                            try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
+                        );
                     }
                 }
 
@@ -346,7 +358,12 @@ fn gui_frame(
                         // TODO: read user_version pragma to check if the db was initialized
                         // correctly. If not, abort with error message somehow.
 
-                        try queries.setStatusText(arena, conn, "Opened {s}", .{existing_file_path});
+                        const filename = std.fs.path.basename(existing_file_path);
+                        try queries.setStatusText(arena, conn, "Opened {s}", .{filename});
+                        _ = Backend.c.SDL_SetWindowTitle(
+                            backend.window,
+                            try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
+                        );
                     }
                 }
             }
