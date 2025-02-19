@@ -84,6 +84,8 @@ pub fn build(b: *std.Build) !void {
     });
     exe.root_module.addImport("ziglua", ziglua.module("ziglua"));
 
+    exe.addWin32ResourceFile(.{ .file = b.path("res/resource.rc") });
+
     const compile_step = b.step("compile-wm2k", "Compile wm2k");
     compile_step.dependOn(&b.addInstallArtifact(exe, .{}).step);
     b.getInstallStep().dependOn(compile_step);
