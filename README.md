@@ -1,10 +1,10 @@
 
 # What
 
-Webmaker2000 is a (WIP) cross-platform static site generator with an
-unapologetically simple GUI:
+WebMaker2000 is a (WIP) cross-platform static site generator with an
+unapologetically spartan GUI:
 
-![](screenshot.png)
+![](screenshot.webp)
 
 The implementation is an experiment in [rubbing sqlite][1] on a desktop GUI:
 
@@ -24,13 +24,22 @@ benefits of using sqlite as an application file format, chief among them being
 **persistent undo/redo**, but also atomic writes, easy atomic schema changes,
 powerful data modelling & querying capabilities.
 
-Remaining puzzles for PoC:
+Remaining puzzle to solve: background processing for tasks that take longer than
+our per-frame budget:
 
-- ~~undo stack~~ Done. Chose emacs-style undo to make it impossible to
-  accidentally lose data.
-- background processing for tasks that take longer than our per-frame budget:
-  + handling mid-operation crashes might be tricky?
-  + how would it interact with the undo thing?
+- handling mid-operation crashes might be tricky?
+- how would it interact with the undo thing?
+
+MVP checklist:
+
+- [x] Persistent undo/redo: Basically adapted [sqlite's guide][undo] to
+  [emacs' undo style][emacs], which avoids accidentally losing data.
+- [ ] Asset upload
+- [ ] User-configurable deploy command (e.g. shelling out to rclone)
+- [ ] Preview server
+- [ ] User-customizable template system
+- [ ] RSS/Atom feed
+- [ ] OpenGraph tags
 
 # Compile
 
@@ -70,3 +79,5 @@ Copy files from `./xdg` into your $HOME, or symlink using [stow][stow]:
 [1]: https://www.hytradboi.com/2022/building-data-centric-apps-with-a-reactive-relational-database
 [3]: https://www.sqlite.org/faq.html#q19
 [stow]: https://www.gnu.org/software/stow/
+[undo]: https://www.sqlite.org/undoredo.html
+[emacs]: https://www.gnu.org/software/emacs/manual/html_node/emacs/Undo.html
