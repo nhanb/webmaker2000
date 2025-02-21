@@ -8,13 +8,14 @@ const theme = @import("theme.zig");
 const generate = @import("generate.zig");
 const djot = @import("djot.zig");
 const queries = @import("queries.zig");
+const Database = @import("Database.zig");
+const constants = @import("constants.zig");
+const server = @import("server.zig");
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
 }
 const Backend = dvui.backend;
-
-const EXTENSION = "wm2k";
 
 const Post = struct {
     id: i64,
@@ -39,29 +40,6 @@ const SceneState = union(Scene) {
 
 const Modal = enum(i64) {
     confirm_post_deletion = 0,
-};
-
-const Database = struct {
-    gpa: std.mem.Allocator,
-    conn: zqlite.Conn,
-    file_path: []const u8,
-
-    fn output_path(self: Database) []const u8 {
-        return self.file_path[0 .. self.file_path.len - 1 - EXTENSION.len];
-    }
-
-    fn init(gpa: std.mem.Allocator, conn: zqlite.Conn, file_path: []const u8) !Database {
-        return .{
-            .gpa = gpa,
-            .conn = conn,
-            .file_path = try gpa.dupe(u8, file_path),
-        };
-    }
-
-    fn deinit(self: Database) void {
-        self.conn.close();
-        self.gpa.free(self.file_path);
-    }
 };
 
 const GuiState = union(enum) {
@@ -153,6 +131,8 @@ const GuiState = union(enum) {
     }
 };
 
+var maybe_server: ?std.Thread = null;
+
 pub fn main() !void {
     var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = gpa_instance.allocator();
@@ -204,7 +184,7 @@ pub fn main() !void {
 
     const argv = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, argv);
-    if (argv.len == 2 and std.mem.endsWith(u8, argv[1], "." ++ EXTENSION)) {
+    if (argv.len == 2 and std.mem.endsWith(u8, argv[1], "." ++ constants.EXTENSION)) {
         // TODO: how to handle errors (e.g. file not found) here? We can't draw
         // anything at this stage.
 
@@ -222,6 +202,12 @@ pub fn main() !void {
         const window_title = try std.fmt.allocPrintZ(gpa, "{s} - WebMaker2000", .{filename});
         defer gpa.free(window_title);
         _ = Backend.c.SDL_SetWindowTitle(backend.window, window_title);
+
+        _ = try std.Thread.spawn(
+            .{},
+            server.run,
+            .{ constants.PORT, existing_file_path },
+        );
     }
 
     try djot.init(gpa);
@@ -255,7 +241,13 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        try gui_frame(&gui_state, &maybe_db, &backend, arena.allocator(), gpa);
+        const should_request_new_frame = try gui_frame(
+            &gui_state,
+            &maybe_db,
+            &backend,
+            arena.allocator(),
+            gpa,
+        );
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -270,7 +262,10 @@ pub fn main() !void {
 
         // waitTime and beginWait combine to achieve variable framerates
         const wait_event_micros = win.waitTime(end_micros, null);
-        backend.waitEventTimeout(wait_event_micros);
+        backend.waitEventTimeout(if (should_request_new_frame)
+            0
+        else
+            wait_event_micros);
     }
 }
 
@@ -280,7 +275,9 @@ fn gui_frame(
     backend: *dvui.backend,
     arena: std.mem.Allocator,
     gpa: std.mem.Allocator, // for data that needs to survive to next frame
-) !void {
+) !bool {
+    var should_request_new_frame = false;
+
     var background = try dvui.overlay(@src(), .{
         .expand = .both,
         .background = true,
@@ -311,8 +308,16 @@ fn gui_frame(
                 if (try dvui.button(@src(), "New...", .{}, .{})) {
                     if (try dvui.dialogNativeFileSave(arena, .{
                         .title = "Create new site",
-                        .filters = &.{"*." ++ EXTENSION},
+                        .filters = &.{"*." ++ constants.EXTENSION},
                     })) |new_file_path| {
+                        // Apparently interaction with the system file dialog
+                        // does not count as user interaction in dvui, so
+                        // there's a chance the UI won't be refreshed after a
+                        // file is chosen. Therefore, we need to manually
+                        // tell dvui to draw the next frame right after this
+                        // frame:
+                        should_request_new_frame = true;
+
                         // Assuming the native "save file" dialog has
                         // already asked for user confirmation if the chosen
                         // file already exists, we can safely delete it now:
@@ -342,14 +347,28 @@ fn gui_frame(
                             backend.window,
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
+
+                        _ = try std.Thread.spawn(
+                            .{},
+                            server.run,
+                            .{ constants.PORT, new_file_path },
+                        );
                     }
                 }
 
                 if (try dvui.button(@src(), "Open...", .{}, .{})) {
                     if (try dvui.dialogNativeFileOpen(arena, .{
                         .title = "Open site",
-                        .filters = &.{"*." ++ EXTENSION},
+                        .filters = &.{"*." ++ constants.EXTENSION},
                     })) |existing_file_path| {
+                        // Apparently interaction with the system file dialog
+                        // does not count as user interaction in dvui, so
+                        // there's a chance the UI won't be refreshed after a
+                        // file is chosen. Therefore, we need to manually
+                        // tell dvui to draw the next frame right after this
+                        // frame:
+                        should_request_new_frame = true;
+
                         const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
                         maybe_db.* = try Database.init(gpa, conn, existing_file_path);
 
@@ -363,6 +382,12 @@ fn gui_frame(
                         _ = Backend.c.SDL_SetWindowTitle(
                             backend.window,
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
+                        );
+
+                        _ = try std.Thread.spawn(
+                            .{},
+                            server.run,
+                            .{ constants.PORT, existing_file_path },
                         );
                     }
                 }
@@ -655,4 +680,6 @@ fn gui_frame(
             }
         },
     }
+
+    return should_request_new_frame;
 }

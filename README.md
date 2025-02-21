@@ -48,12 +48,12 @@ Dependencies:
 - Build time: zig master (0.14.0-dev.3271+bd237bced as of this writing)
 - Runtime: libc
 
-Statically compiled deps:
+Statically compiled deps that can optionally be linked dynamically:
 
-- sqlite3
 - sdl3
 - freetype2
-- djot.lua, and obviously, lua
+- sqlite3
+- lua (for djot.lua, which is vendored here)
 
 
 ```sh

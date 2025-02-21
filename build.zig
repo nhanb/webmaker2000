@@ -84,6 +84,13 @@ pub fn build(b: *std.Build) !void {
     });
     exe.root_module.addImport("ziglua", ziglua.module("ziglua"));
 
+    // http.zig
+    const httpz = b.dependency("httpz", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("httpz", httpz.module("httpz"));
+
     exe.addWin32ResourceFile(.{ .file = b.path("res/resource.rc") });
 
     const compile_step = b.step("compile-wm2k", "Compile wm2k");
