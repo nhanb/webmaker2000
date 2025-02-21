@@ -45,8 +45,7 @@ MVP checklist:
 
 Dependencies:
 
-- Build time: zig 0.14.0-dev.3020+c104e8644 - our dependencies haven't been
-  updated to compile on latest zig nightly (0.14.0-dev.3222+8a3aebaee) yet.
+- Build time: zig master (0.14.0-dev.3271+bd237bced as of this writing)
 - Runtime: libc
 
 Statically compiled deps:
