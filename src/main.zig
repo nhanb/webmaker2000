@@ -11,7 +11,7 @@ const generate = @import("generate.zig");
 const djot = @import("djot.zig");
 const queries = @import("queries.zig");
 const Database = @import("Database.zig");
-const server = @import("server.zig");
+const Server = @import("Server.zig");
 
 const constants = @import("constants.zig");
 const PORT = constants.PORT;
@@ -136,12 +136,18 @@ const GuiState = union(enum) {
     }
 };
 
-var maybe_server: ?std.Thread = null;
+var maybe_server: ?*Server = null;
 
 pub fn main() !void {
     var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = gpa_instance.allocator();
     defer _ = gpa_instance.deinit();
+
+    defer {
+        if (maybe_server) |_| {
+            maybe_server.?.deinit();
+        }
+    }
 
     // init SDL backend (creates and owns OS window)
     var backend = try Backend.initWindow(.{
@@ -208,11 +214,7 @@ pub fn main() !void {
         defer gpa.free(window_title);
         _ = Backend.c.SDL_SetWindowTitle(backend.window, window_title);
 
-        _ = try std.Thread.spawn(
-            .{},
-            server.run,
-            .{ PORT, existing_file_path },
-        );
+        maybe_server = try Server.init(gpa, PORT, existing_file_path);
     }
 
     try djot.init(gpa);
@@ -352,12 +354,6 @@ fn gui_frame(
                             backend.window,
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
-
-                        _ = try std.Thread.spawn(
-                            .{},
-                            server.run,
-                            .{ PORT, new_file_path },
-                        );
                     }
                 }
 
@@ -387,12 +383,6 @@ fn gui_frame(
                         _ = Backend.c.SDL_SetWindowTitle(
                             backend.window,
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
-                        );
-
-                        _ = try std.Thread.spawn(
-                            .{},
-                            server.run,
-                            .{ PORT, existing_file_path },
                         );
                     }
                 }

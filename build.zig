@@ -11,31 +11,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    // dvui's build.zig is a bit wonky: if -fsys=sdl3 is present then
-    // b.option(bool, "sdl3"...) won't be called, triggering this message:
-    //
-    // > error: invalid option: -Dsdl3
-    // > /home/nhanb/zig/lib/std/Build.zig:2230:35: 0x1434db8 in dependency__anon_8745 (build)
-    // >             return dependencyInner(b, name, pkg.build_root, if (@hasDecl(pkg, "build_zig")) pkg.build_zig else null, pkg_hash, pkg.deps, args);
-    // >                                   ^
-    // > /home/nhanb/pj/webmaker2000/build.zig:15:34: 0x1433fe9 in build (build)
-    // >     const dvui_dep = b.dependency("dvui", .{
-    //                                  ^
-    // To work around that, we should only provide the .sdl3 build option when
-    // -fsys=sdl3 is not activated.
-    //
-    // Possible upstream fix: https://github.com/david-vanderson/dvui/pull/182
-    const dvui_dep = if (b.systemIntegrationOption("sdl3", .{}))
-        b.dependency("dvui", .{
-            .target = target,
-            .optimize = optimize,
-        })
-    else
-        b.dependency("dvui", .{
-            .target = target,
-            .optimize = optimize,
-            .sdl3 = true,
-        });
+    const dvui_dep = b.dependency("dvui", .{
+        .target = target,
+        .optimize = optimize,
+        .sdl3 = true,
+    });
     exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl"));
 
     // zqlite
@@ -83,13 +63,6 @@ pub fn build(b: *std.Build) !void {
         .shared = use_system_lua,
     });
     exe.root_module.addImport("ziglua", ziglua.module("ziglua"));
-
-    // http.zig
-    const httpz = b.dependency("httpz", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    exe.root_module.addImport("httpz", httpz.module("httpz"));
 
     exe.addWin32ResourceFile(.{ .file = b.path("res/resource.rc") });
 
