@@ -7,7 +7,7 @@ pub fn run(port: u16, file_path: [:0]const u8) !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = gpa_impl.allocator();
 
-    const conn = try zqlite.open(file_path, zqlite.OpenFlags.EXResCode);
+    const conn = try zqlite.open(file_path, zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.ReadOnly);
 
     var db = try Database.init(gpa, conn, file_path);
     defer db.deinit();

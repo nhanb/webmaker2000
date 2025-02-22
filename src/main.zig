@@ -1,5 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
+const allocPrint = std.fmt.allocPrint;
+
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
@@ -9,8 +11,11 @@ const generate = @import("generate.zig");
 const djot = @import("djot.zig");
 const queries = @import("queries.zig");
 const Database = @import("Database.zig");
-const constants = @import("constants.zig");
 const server = @import("server.zig");
+
+const constants = @import("constants.zig");
+const PORT = constants.PORT;
+const EXTENSION = constants.EXTENSION;
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
@@ -184,7 +189,7 @@ pub fn main() !void {
 
     const argv = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, argv);
-    if (argv.len == 2 and std.mem.endsWith(u8, argv[1], "." ++ constants.EXTENSION)) {
+    if (argv.len == 2 and std.mem.endsWith(u8, argv[1], "." ++ EXTENSION)) {
         // TODO: how to handle errors (e.g. file not found) here? We can't draw
         // anything at this stage.
 
@@ -206,7 +211,7 @@ pub fn main() !void {
         _ = try std.Thread.spawn(
             .{},
             server.run,
-            .{ constants.PORT, existing_file_path },
+            .{ PORT, existing_file_path },
         );
     }
 
@@ -241,7 +246,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        const should_request_new_frame = try gui_frame(
+        const request_new_frame = try gui_frame(
             &gui_state,
             &maybe_db,
             &backend,
@@ -262,7 +267,7 @@ pub fn main() !void {
 
         // waitTime and beginWait combine to achieve variable framerates
         const wait_event_micros = win.waitTime(end_micros, null);
-        backend.waitEventTimeout(if (should_request_new_frame)
+        backend.waitEventTimeout(if (request_new_frame)
             0
         else
             wait_event_micros);
@@ -276,7 +281,7 @@ fn gui_frame(
     arena: std.mem.Allocator,
     gpa: std.mem.Allocator, // for data that needs to survive to next frame
 ) !bool {
-    var should_request_new_frame = false;
+    var request_new_frame = false;
 
     var background = try dvui.overlay(@src(), .{
         .expand = .both,
@@ -295,7 +300,7 @@ fn gui_frame(
             });
             defer vbox.deinit();
 
-            try dvui.label(@src(), "Would you like to create a new site or open an existing one?", .{}, .{});
+            try dvui.label(@src(), "Create new site or open an existing one?", .{}, .{});
 
             {
                 var hbox = try dvui.box(@src(), .horizontal, .{
@@ -308,7 +313,7 @@ fn gui_frame(
                 if (try dvui.button(@src(), "New...", .{}, .{})) {
                     if (try dvui.dialogNativeFileSave(arena, .{
                         .title = "Create new site",
-                        .filters = &.{"*." ++ constants.EXTENSION},
+                        .filters = &.{"*." ++ EXTENSION},
                     })) |new_file_path| {
                         // Apparently interaction with the system file dialog
                         // does not count as user interaction in dvui, so
@@ -316,7 +321,7 @@ fn gui_frame(
                         // file is chosen. Therefore, we need to manually
                         // tell dvui to draw the next frame right after this
                         // frame:
-                        should_request_new_frame = true;
+                        request_new_frame = true;
 
                         // Assuming the native "save file" dialog has
                         // already asked for user confirmation if the chosen
@@ -351,7 +356,7 @@ fn gui_frame(
                         _ = try std.Thread.spawn(
                             .{},
                             server.run,
-                            .{ constants.PORT, new_file_path },
+                            .{ PORT, new_file_path },
                         );
                     }
                 }
@@ -359,7 +364,7 @@ fn gui_frame(
                 if (try dvui.button(@src(), "Open...", .{}, .{})) {
                     if (try dvui.dialogNativeFileOpen(arena, .{
                         .title = "Open site",
-                        .filters = &.{"*." ++ constants.EXTENSION},
+                        .filters = &.{"*." ++ EXTENSION},
                     })) |existing_file_path| {
                         // Apparently interaction with the system file dialog
                         // does not count as user interaction in dvui, so
@@ -367,7 +372,7 @@ fn gui_frame(
                         // file is chosen. Therefore, we need to manually
                         // tell dvui to draw the next frame right after this
                         // frame:
-                        should_request_new_frame = true;
+                        request_new_frame = true;
 
                         const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
                         maybe_db.* = try Database.init(gpa, conn, existing_file_path);
@@ -387,7 +392,7 @@ fn gui_frame(
                         _ = try std.Thread.spawn(
                             .{},
                             server.run,
-                            .{ constants.PORT, existing_file_path },
+                            .{ PORT, existing_file_path },
                         );
                     }
                 }
@@ -480,6 +485,17 @@ fn gui_frame(
                         "Generated static site in {d}ms.",
                         .{miliseconds},
                     );
+                }
+
+                const url = switch (state.scene) {
+                    .listing => try allocPrint(arena, "http://localhost:{d}", .{PORT}),
+                    .editing => |s| try allocPrint(arena, "http://localhost:{d}/{d}", .{ PORT, s.post.id }),
+                };
+                if (try dvui.labelClick(@src(), "{s}", .{url}, .{
+                    .gravity_x = 1.0,
+                    .color_text = .{ .color = .{ .r = 0x00, .g = 0x00, .b = 0xff } },
+                })) {
+                    try dvui.openURL(url);
                 }
             }
 
@@ -681,5 +697,5 @@ fn gui_frame(
         },
     }
 
-    return should_request_new_frame;
+    return request_new_frame;
 }
