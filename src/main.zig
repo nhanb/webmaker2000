@@ -143,12 +143,6 @@ pub fn main() !void {
     const gpa = gpa_instance.allocator();
     defer _ = gpa_instance.deinit();
 
-    defer {
-        if (maybe_server) |_| {
-            maybe_server.?.deinit();
-        }
-    }
-
     // init SDL backend (creates and owns OS window)
     var backend = try Backend.initWindow(.{
         .allocator = gpa,
@@ -273,6 +267,10 @@ pub fn main() !void {
             0
         else
             wait_event_micros);
+    }
+
+    if (maybe_server) |_| {
+        maybe_server.?.deinit();
     }
 }
 
