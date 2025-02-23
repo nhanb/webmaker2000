@@ -15,10 +15,11 @@ const Server = @import("Server.zig");
 const constants = @import("constants.zig");
 const PORT = constants.PORT;
 const EXTENSION = constants.EXTENSION;
-const core = @import("core.zig");
-const GuiState = core.GuiState;
-const Modal = core.Modal;
-const Scene = core.Scene;
+const core_ = @import("core.zig");
+const GuiState = core_.GuiState;
+const Modal = core_.Modal;
+const Scene = core_.Scene;
+const Core = core_.Core;
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
@@ -107,6 +108,8 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
+    var core = Core{};
+
     // In each frame:
     // - make sure arena is reset
     // - read gui_state fresh from database
@@ -114,7 +117,7 @@ pub fn main() !void {
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
-        const gui_state = try GuiState.read(maybe_db, arena.allocator());
+        core.state = try GuiState.read(maybe_db, arena.allocator());
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -132,7 +135,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
         const request_new_frame = try gui_frame(
-            &gui_state,
+            &core,
             &maybe_db,
             &backend,
             arena.allocator(),
@@ -164,7 +167,7 @@ pub fn main() !void {
 }
 
 fn gui_frame(
-    gui_state: *const GuiState,
+    core: *Core,
     maybe_db: *?Database,
     backend: *dvui.backend,
     arena: std.mem.Allocator,
@@ -179,7 +182,7 @@ fn gui_frame(
     });
     defer background.deinit();
 
-    switch (gui_state.*) {
+    switch (core.state) {
 
         // Let user either create new or open existing wm2k file:
         .no_file_opened => {
@@ -403,13 +406,7 @@ fn gui_frame(
                         defer hbox.deinit();
 
                         if (try theme.button(@src(), "Edit", .{}, .{})) {
-                            try conn.transaction();
-                            errdefer conn.rollback();
-                            try history.foldRedos(conn, state.history.redos);
-                            try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
-                            try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post.id});
-                            try history.addUndoBarrier(.edit_post, conn);
-                            try conn.commit();
+                            try core.handleAction(conn, .{ .edit_post = post.id });
                         }
 
                         try dvui.label(

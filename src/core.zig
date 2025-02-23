@@ -8,15 +8,20 @@ const history = @import("history.zig");
 const sql = @import("sql.zig");
 
 pub const Core = struct {
-    state: GuiState,
+    state: GuiState = undefined,
 
     pub fn handleAction(self: *Core, conn: zqlite.Conn, action: Action) !void {
+        if (self.state == .no_file_opened) {
+            return error.ActionNotImplemented;
+        }
+
         try conn.transaction();
         errdefer conn.rollback();
 
+        try history.foldRedos(conn, self.state.opened.history.redos);
+
         switch (action) {
             .edit_post => |post_id| {
-                try history.foldRedos(conn, self.state.opened.history.redos);
                 try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                 try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post_id});
             },
@@ -25,7 +30,8 @@ pub const Core = struct {
             },
         }
 
-        try history.addUndoBarrier(.change_scene, conn);
+        try history.addUndoBarrier(action, conn);
+
         try conn.commit();
     }
 };

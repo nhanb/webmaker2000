@@ -256,8 +256,8 @@ pub fn getBarriers(
 // For text input changes, skip creating an undo barrier if this change is
 // within a few seconds since the last change.
 // This also cleans up trailing history_undo records in such cases.
-fn shouldDebounceBarrier(comptime action: core.ActionEnum, conn: zqlite.Conn) !bool {
-    const is_debounceable = comptime switch (action) {
+fn shouldDebounceBarrier(action: core.ActionEnum, conn: zqlite.Conn) !bool {
+    const is_debounceable = switch (action) {
         .create_post => false,
         .update_post_title => true,
         .update_post_content => true,
@@ -269,16 +269,13 @@ fn shouldDebounceBarrier(comptime action: core.ActionEnum, conn: zqlite.Conn) !b
 
     var prevRow = try sql.selectRow(
         conn,
-        std.fmt.comptimePrint(
-            \\select id
-            \\from history_barrier_undo
-            \\where action = {d}
-            \\  and created_at >= datetime('now', '-2 seconds')
-            \\  and id = (select max(id) from history_barrier_undo)
-        ,
-            .{@intFromEnum(action)},
-        ),
-        .{},
+        \\select id
+        \\from history_barrier_undo
+        \\where action = ?
+        \\  and created_at >= datetime('now', '-2 seconds')
+        \\  and id = (select max(id) from history_barrier_undo)
+    ,
+        .{@intFromEnum(action)},
     ) orelse return false;
 
     const prevBarrierId = prevRow.int(0);
@@ -293,7 +290,7 @@ fn shouldDebounceBarrier(comptime action: core.ActionEnum, conn: zqlite.Conn) !b
 }
 
 pub fn addUndoBarrier(
-    comptime action: core.ActionEnum,
+    action: core.ActionEnum,
     conn: zqlite.Conn,
 ) !void {
     if (try shouldDebounceBarrier(action, conn)) {
