@@ -60,7 +60,13 @@ pub fn deinit(self: *Server) void {
     print("Server shut down cleanly.\n", .{});
 }
 
-fn start_server(self: *Server) void {
+fn start_server(self: *Server) !void {
+    var conn = try zqlite.Conn.init(
+        self.file_path,
+        zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.ReadOnly,
+    );
+    defer conn.close();
+
     while (true) {
         var connection = self.net_server.accept() catch |err| {
             print("Connection to client interrupted: {}\n", .{err});
@@ -80,15 +86,6 @@ fn start_server(self: *Server) void {
             request.respond("bye", .{}) catch unreachable;
             break;
         }
-
-        var conn = zqlite.Conn.init(
-            self.file_path,
-            zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.ReadOnly,
-        ) catch |err| {
-            print("Could not open db: {}\n", .{err});
-            continue;
-        };
-        defer conn.close();
 
         handle_request(&request, conn) catch |err| {
             print("Could not handle request: {}\n", .{err});
