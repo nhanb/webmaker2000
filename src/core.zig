@@ -11,6 +11,13 @@ const queries = @import("queries.zig");
 
 pub const Core = struct {
     state: GuiState = undefined,
+    maybe_db: ?Database = null,
+
+    pub fn deinit(self: *Core) void {
+        if (self.maybe_db) |db| {
+            db.deinit();
+        }
+    }
 
     pub fn handleAction(self: *Core, conn: zqlite.Conn, arena: Allocator, action: Action) !void {
         if (self.state == .no_file_opened) {

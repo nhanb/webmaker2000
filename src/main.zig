@@ -73,8 +73,8 @@ pub fn main() !void {
     try win.keybinds.putNoClobber("wm2k_undo", .{ .control = true, .shift = false, .key = .z });
     try win.keybinds.putNoClobber("wm2k_redo", .{ .control = true, .shift = true, .key = .z });
 
-    var maybe_db: ?Database = null;
-    defer if (maybe_db) |db| db.deinit();
+    var core = Core{};
+    defer core.deinit();
 
     const argv = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, argv);
@@ -84,7 +84,7 @@ pub fn main() !void {
 
         const existing_file_path = argv[1];
         const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
-        maybe_db = try Database.init(gpa, conn, existing_file_path);
+        core.maybe_db = try Database.init(gpa, conn, existing_file_path);
 
         try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
@@ -107,8 +107,6 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    var core = Core{};
-
     // In each frame:
     // - make sure arena is reset
     // - read gui_state fresh from database
@@ -116,7 +114,7 @@ pub fn main() !void {
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
-        core.state = try GuiState.read(maybe_db, arena.allocator());
+        core.state = try GuiState.read(core.maybe_db, arena.allocator());
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -135,7 +133,6 @@ pub fn main() !void {
 
         const request_new_frame = try gui_frame(
             &core,
-            &maybe_db,
             &backend,
             arena.allocator(),
             gpa,
@@ -167,7 +164,6 @@ pub fn main() !void {
 
 fn gui_frame(
     core: *Core,
-    maybe_db: *?Database,
     backend: *dvui.backend,
     arena: std.mem.Allocator,
     gpa: std.mem.Allocator, // for data that needs to survive to next frame
@@ -227,7 +223,7 @@ fn gui_frame(
                             new_file_path,
                             zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.Create,
                         );
-                        maybe_db.* = try Database.init(gpa, conn, new_file_path);
+                        core.maybe_db = try Database.init(gpa, conn, new_file_path);
 
                         try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
@@ -262,7 +258,7 @@ fn gui_frame(
                         request_new_frame = true;
 
                         const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
-                        maybe_db.* = try Database.init(gpa, conn, existing_file_path);
+                        core.maybe_db = try Database.init(gpa, conn, existing_file_path);
 
                         try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
@@ -284,7 +280,7 @@ fn gui_frame(
 
         // User has actually opened a file => show main UI:
         .opened => |state| {
-            const db = maybe_db.*.?;
+            const db = core.maybe_db.?;
             const conn = db.conn;
 
             // Handle keyboard shortcuts
