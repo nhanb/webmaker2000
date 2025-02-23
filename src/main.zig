@@ -1,9 +1,9 @@
 const std = @import("std");
 const print = std.debug.print;
 const allocPrint = std.fmt.allocPrint;
-
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
+
 const sql = @import("sql.zig");
 const history = @import("history.zig");
 const theme = @import("theme.zig");
@@ -12,129 +12,18 @@ const djot = @import("djot.zig");
 const queries = @import("queries.zig");
 const Database = @import("Database.zig");
 const Server = @import("Server.zig");
-
 const constants = @import("constants.zig");
 const PORT = constants.PORT;
 const EXTENSION = constants.EXTENSION;
+const core = @import("core.zig");
+const GuiState = core.GuiState;
+const Modal = core.Modal;
+const Scene = core.Scene;
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
 }
 const Backend = dvui.backend;
-
-const Post = struct {
-    id: i64,
-    title: []u8,
-    content: []u8,
-};
-
-const Scene = enum(i64) {
-    listing = 0,
-    editing = 1,
-};
-
-const SceneState = union(Scene) {
-    listing: struct {
-        posts: []Post,
-    },
-    editing: struct {
-        post: Post,
-        show_confirm_delete: bool,
-    },
-};
-
-const Modal = enum(i64) {
-    confirm_post_deletion = 0,
-};
-
-const GuiState = union(enum) {
-    no_file_opened: void,
-    opened: struct {
-        scene: SceneState,
-        status_text: []const u8,
-        history: struct {
-            undos: []history.Barrier,
-            redos: []history.Barrier,
-        },
-    },
-
-    fn read(maybe_db: ?Database, arena: std.mem.Allocator) !GuiState {
-        const db = maybe_db orelse return .no_file_opened;
-        const conn = db.conn;
-
-        const current_scene: Scene = @enumFromInt(
-            try sql.selectInt(conn, "select current_scene from gui_scene"),
-        );
-
-        const scene: SceneState = switch (current_scene) {
-            .listing => blk: {
-                var posts = std.ArrayList(Post).init(arena);
-                var rows = try sql.rows(conn, "select id, title, content from post order by id desc", .{});
-                defer rows.deinit();
-                while (rows.next()) |row| {
-                    const post = Post{
-                        .id = row.int(0),
-                        .title = try arena.dupe(u8, row.text(1)),
-                        .content = try arena.dupe(u8, row.text(2)),
-                    };
-                    try posts.append(post);
-                }
-                try sql.check(rows.err, conn);
-
-                break :blk .{ .listing = .{ .posts = posts.items } };
-            },
-
-            .editing => blk: {
-                var row = (try sql.selectRow(conn,
-                    \\select p.id, p.title, p.content
-                    \\from post p
-                    \\inner join gui_scene_editing e on e.post_id = p.id
-                , .{})).?;
-                defer row.deinit();
-
-                const show_confirm_delete = (try sql.selectInt(
-                    conn,
-                    std.fmt.comptimePrint(
-                        "select exists (select * from gui_modal where kind = {d})",
-                        .{@intFromEnum(Modal.confirm_post_deletion)},
-                    ),
-                ) == 1);
-
-                break :blk .{
-                    .editing = .{
-                        .post = Post{
-                            .id = row.int(0),
-                            .title = try arena.dupe(u8, row.text(1)),
-                            .content = try arena.dupe(u8, row.text(2)),
-                        },
-                        .show_confirm_delete = show_confirm_delete,
-                    },
-                };
-            },
-        };
-
-        const status_text_row = try sql.selectRow(
-            conn,
-            "select status_text from gui_status_text where expires_at > datetime('now')",
-            .{},
-        );
-        const status_text = if (status_text_row) |row| blk: {
-            defer row.deinit();
-            break :blk try arena.dupe(u8, row.text(0));
-        } else "";
-
-        return .{
-            .opened = .{
-                .scene = scene,
-                .status_text = status_text,
-                .history = .{
-                    .undos = try history.getBarriers(history.Undo, conn, arena),
-                    .redos = try history.getBarriers(history.Redo, conn, arena),
-                },
-            },
-        };
-    }
-};
 
 var maybe_server: ?*Server = null;
 
