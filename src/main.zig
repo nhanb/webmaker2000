@@ -243,6 +243,8 @@ fn gui_frame(
                             backend.window,
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
+
+                        maybe_server = try Server.init(gpa, PORT, new_file_path);
                     }
                 }
 
@@ -273,6 +275,8 @@ fn gui_frame(
                             backend.window,
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
+
+                        maybe_server = try Server.init(gpa, PORT, existing_file_path);
                     }
                 }
             }
