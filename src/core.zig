@@ -1,7 +1,52 @@
 const std = @import("std");
-const history = @import("history.zig");
+const print = std.debug.print;
+
+const zqlite = @import("zqlite");
+
 const Database = @import("Database.zig");
+const history = @import("history.zig");
 const sql = @import("sql.zig");
+
+pub const Core = struct {
+    state: GuiState,
+
+    pub fn handleAction(self: *Core, conn: zqlite.Conn, action: Action) !void {
+        try conn.transaction();
+        errdefer conn.rollback();
+
+        switch (action) {
+            .edit_post => |post_id| {
+                try history.foldRedos(conn, self.state.opened.history.redos);
+                try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post_id});
+            },
+            else => {
+                print("TODO action: {}\n", .{action});
+            },
+        }
+
+        try history.addUndoBarrier(.change_scene, conn);
+        try conn.commit();
+    }
+};
+
+pub const ActionEnum = enum(i64) {
+    create_post = 0,
+    update_post_title = 1,
+    update_post_content = 2,
+    delete_post = 3,
+    edit_post = 4,
+    list_posts = 5,
+};
+
+pub const Action = union(ActionEnum) {
+    create_post: void,
+    update_post_title: struct { id: i64, title: []const u8 },
+    update_post_content: struct { id: i64, content: []const u8 },
+    delete_post: i64,
+    edit_post: i64,
+    list_posts: void,
+};
 
 const Post = struct {
     id: i64,

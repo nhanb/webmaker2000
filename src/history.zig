@@ -3,18 +3,11 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const queries = @import("queries.zig");
 const print = std.debug.print;
-
-pub const Action = enum(i64) {
-    create_post = 0,
-    update_post_title = 1,
-    update_post_content = 2,
-    delete_post = 3,
-    change_scene = 4,
-};
+const core = @import("core.zig");
 
 pub const Barrier = struct {
     id: i64,
-    action: Action,
+    action: core.ActionEnum,
 };
 
 const HISTORY_TABLES = &.{
@@ -225,7 +218,8 @@ pub fn undo(
         .update_post_title => "Undo: Update post title.",
         .update_post_content => "Undo: Update post content.",
         .delete_post => "Undo: Delete post.",
-        .change_scene => "Undo: Change scene.",
+        .edit_post => "Undo: View post.",
+        .list_posts => "Undo: View posts list.",
     };
     try queries.setStatusTextNoAlloc(conn, status_text);
 }
@@ -262,13 +256,14 @@ pub fn getBarriers(
 // For text input changes, skip creating an undo barrier if this change is
 // within a few seconds since the last change.
 // This also cleans up trailing history_undo records in such cases.
-fn shouldDebounceBarrier(comptime action: Action, conn: zqlite.Conn) !bool {
+fn shouldDebounceBarrier(comptime action: core.ActionEnum, conn: zqlite.Conn) !bool {
     const is_debounceable = comptime switch (action) {
         .create_post => false,
         .update_post_title => true,
         .update_post_content => true,
         .delete_post => false,
-        .change_scene => false,
+        .edit_post => false,
+        .list_posts => false,
     };
     if (!is_debounceable) return false;
 
@@ -298,7 +293,7 @@ fn shouldDebounceBarrier(comptime action: Action, conn: zqlite.Conn) !bool {
 }
 
 pub fn addUndoBarrier(
-    comptime action: Action,
+    comptime action: core.ActionEnum,
     conn: zqlite.Conn,
 ) !void {
     if (try shouldDebounceBarrier(action, conn)) {
@@ -373,7 +368,8 @@ pub fn redo(
         .update_post_title => "Redo: Update post title.",
         .update_post_content => "Redo: Update post content.",
         .delete_post => "Redo: Delete post.",
-        .change_scene => "Redo: Change scene.",
+        .edit_post => "Redo: View post.",
+        .list_posts => "Redo: View posts list.",
     };
     try queries.setStatusTextNoAlloc(conn, status_text);
 }

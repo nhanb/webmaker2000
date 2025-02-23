@@ -408,7 +408,7 @@ fn gui_frame(
                             try history.foldRedos(conn, state.history.redos);
                             try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                             try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post.id});
-                            try history.addUndoBarrier(.change_scene, conn);
+                            try history.addUndoBarrier(.edit_post, conn);
                             try conn.commit();
                         }
 
@@ -505,7 +505,7 @@ fn gui_frame(
                             errdefer conn.rollback();
                             try history.foldRedos(conn, state.history.redos);
                             try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
-                            try history.addUndoBarrier(.change_scene, conn);
+                            try history.addUndoBarrier(.list_posts, conn);
                             try conn.commit();
                         }
 
