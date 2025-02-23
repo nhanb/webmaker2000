@@ -12,10 +12,9 @@ gpa: mem.Allocator,
 address: net.Address,
 net_server: net.Server,
 file_path: [:0]const u8,
-thread: std.Thread,
 
 pub fn init(gpa: mem.Allocator, port: u16, file_path: [:0]const u8) !*Server {
-    print("Server starting at port {d}\n", .{port});
+    print("Server starting at http://localhost:{d}\n", .{port});
 
     var server = try gpa.create(Server);
     server.* = .{
@@ -23,43 +22,34 @@ pub fn init(gpa: mem.Allocator, port: u16, file_path: [:0]const u8) !*Server {
         .address = try net.Address.parseIp4("127.0.0.1", port),
         .net_server = try server.address.listen(.{ .reuse_address = true }),
         .file_path = try gpa.dupeZ(u8, file_path),
-        .thread = try std.Thread.spawn(.{}, start_server, .{server}),
     };
+
+    // Run server in separate thread, then detach() so it doesn't block the
+    // whole program from exiting. Worst case scenario, the thread gets killed
+    // before its sqlite connection is properly closed, but since this is a
+    // read-only sqlite connection, it's Probably Okay (tm).
+    //
+    // I previously tried to conditionally break the loop in start_server by
+    // sending a special http request to the server itself, but Chrome on
+    // Windows would automatically open a connection without sending anything:
+    // <https://stackoverflow.com/questions/47336535/why-does-chrome-open-a-connection-but-not-send-anything>
+    // , presumably to appear more speedy. This unfortunately deadlocked
+    // the loop before our special "shutdown" request could be received.
+    //
+    // So here we are, detach()-ing the thread into the ether and trying not to
+    // worry too much about it...
+    var thread = try std.Thread.spawn(.{}, start_server, .{server});
+    thread.detach();
 
     return server;
 }
 
 pub fn deinit(self: *Server) void {
-    {
-        // Send shutdown request
-        var client = std.http.Client{ .allocator = self.gpa };
-        defer client.deinit();
-        _ = client.fetch(.{
-            .method = .POST,
-            .location = .{
-                .uri = .{
-                    .scheme = "http",
-                    .host = .{ .raw = "127.0.0.1" },
-                    .path = .{ .raw = SHUTDOWN_PATH },
-                    .port = self.net_server.listen_address.getPort(),
-                },
-            },
-        }) catch |err| {
-            print("Failed to send shutdown request: {}\n", .{err});
-            unreachable;
-        };
-    }
-
-    self.thread.join();
     self.gpa.free(self.file_path);
     self.net_server.deinit();
     self.gpa.destroy(self);
-    print("Server shut down cleanly.\n", .{});
+    print("Server shut down.\n", .{});
 }
-
-/// When server receives a POST to this path, it will stop waiting for
-/// connections, letting the server thread end.
-const SHUTDOWN_PATH = "/_wm2k_shutdown";
 
 fn start_server(self: *Server) !void {
     var conn = try zqlite.Conn.init(
@@ -82,13 +72,6 @@ fn start_server(self: *Server) !void {
             print("Could not read head: {}\n", .{err});
             continue;
         };
-
-        if (request.head.method == .POST and
-            std.mem.eql(u8, request.head.target, SHUTDOWN_PATH))
-        {
-            request.respond("bye", .{}) catch unreachable;
-            break;
-        }
 
         handle_request(&request, conn) catch |err| {
             print("Could not handle request: {}\n", .{err});
