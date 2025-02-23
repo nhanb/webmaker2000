@@ -14,9 +14,6 @@ net_server: net.Server,
 file_path: [:0]const u8,
 thread: std.Thread,
 
-/// Send an http request to this path to shut down the server.
-const SHUTDOWN_PATH = "/_shutdown";
-
 pub fn init(gpa: mem.Allocator, port: u16, file_path: [:0]const u8) !*Server {
     print("Server starting at port {d}\n", .{port});
 
@@ -38,7 +35,7 @@ pub fn deinit(self: *Server) void {
         var client = std.http.Client{ .allocator = self.gpa };
         defer client.deinit();
         _ = client.fetch(.{
-            .method = .GET,
+            .method = .POST,
             .location = .{
                 .uri = .{
                     .scheme = "http",
@@ -59,6 +56,10 @@ pub fn deinit(self: *Server) void {
     self.gpa.destroy(self);
     print("Server shut down cleanly.\n", .{});
 }
+
+/// When server receives a POST to this path, it will stop waiting for
+/// connections, letting the server thread end.
+const SHUTDOWN_PATH = "/_wm2k_shutdown";
 
 fn start_server(self: *Server) !void {
     var conn = try zqlite.Conn.init(
@@ -82,7 +83,9 @@ fn start_server(self: *Server) !void {
             continue;
         };
 
-        if (std.mem.eql(u8, request.head.target, SHUTDOWN_PATH)) {
+        if (request.head.method == .POST and
+            std.mem.eql(u8, request.head.target, SHUTDOWN_PATH))
+        {
             request.respond("bye", .{}) catch unreachable;
             break;
         }
