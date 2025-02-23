@@ -1,16 +1,18 @@
 const std = @import("std");
 const print = std.debug.print;
+const Allocator = std.mem.Allocator;
 
 const zqlite = @import("zqlite");
 
 const Database = @import("Database.zig");
 const history = @import("history.zig");
 const sql = @import("sql.zig");
+const queries = @import("queries.zig");
 
 pub const Core = struct {
     state: GuiState = undefined,
 
-    pub fn handleAction(self: *Core, conn: zqlite.Conn, action: Action) !void {
+    pub fn handleAction(self: *Core, conn: zqlite.Conn, arena: Allocator, action: Action) !void {
         if (self.state == .no_file_opened) {
             return error.ActionNotImplemented;
         }
@@ -18,19 +20,64 @@ pub const Core = struct {
         try conn.transaction();
         errdefer conn.rollback();
 
-        try history.foldRedos(conn, self.state.opened.history.redos);
+        const skip_history = history.shouldSkip(action);
+        if (!skip_history) {
+            try history.foldRedos(conn, self.state.opened.history.redos);
+        }
 
         switch (action) {
+            .create_post => {
+                try sql.execNoArgs(conn, "insert into post default values");
+                const new_post_id = conn.lastInsertedRowId();
+                try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
+                try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
+
+                try queries.setStatusText(arena, conn, "Created post #{d}.", .{new_post_id});
+            },
+            .update_post_title => |data| {
+                try sql.exec(conn, "update post set title=? where id=?", .{ data.title, data.id });
+            },
+            .update_post_content => |data| {
+                try sql.exec(conn, "update post set content=? where id=?", .{ data.content, data.id });
+            },
             .edit_post => |post_id| {
                 try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
                 try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{post_id});
             },
-            else => {
-                print("TODO action: {}\n", .{action});
+            .list_posts => {
+                try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
+            },
+            .delete_post => {
+                try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                    "insert into gui_modal(kind) values({d})",
+                    .{@intFromEnum(Modal.confirm_post_deletion)},
+                ));
+            },
+            .delete_post_yes => |post_id| {
+                try sql.exec(conn, "delete from post where id=?", .{post_id});
+                try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
+                try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                    "delete from gui_modal where kind={d}",
+                    .{@intFromEnum(Modal.confirm_post_deletion)},
+                ));
+                try queries.setStatusText(
+                    arena,
+                    conn,
+                    "Deleted post #{d}.",
+                    .{post_id},
+                );
+            },
+            .delete_post_no => {
+                try sql.execNoArgs(conn, std.fmt.comptimePrint(
+                    "delete from gui_modal where kind={d}",
+                    .{@intFromEnum(Modal.confirm_post_deletion)},
+                ));
             },
         }
 
-        try history.addUndoBarrier(action, conn);
+        if (!skip_history) {
+            try history.addUndoBarrier(action, conn);
+        }
 
         try conn.commit();
     }
@@ -40,18 +87,22 @@ pub const ActionEnum = enum(i64) {
     create_post = 0,
     update_post_title = 1,
     update_post_content = 2,
-    delete_post = 3,
-    edit_post = 4,
-    list_posts = 5,
+    edit_post = 3,
+    list_posts = 4,
+    delete_post = 5,
+    delete_post_yes = 6,
+    delete_post_no = 7,
 };
 
 pub const Action = union(ActionEnum) {
     create_post: void,
     update_post_title: struct { id: i64, title: []const u8 },
     update_post_content: struct { id: i64, content: []const u8 },
-    delete_post: i64,
     edit_post: i64,
     list_posts: void,
+    delete_post: i64,
+    delete_post_yes: i64,
+    delete_post_no: i64,
 };
 
 const Post = struct {

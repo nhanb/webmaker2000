@@ -18,7 +18,6 @@ const EXTENSION = constants.EXTENSION;
 const core_ = @import("core.zig");
 const GuiState = core_.GuiState;
 const Modal = core_.Modal;
-const Scene = core_.Scene;
 const Core = core_.Core;
 
 comptime {
@@ -384,21 +383,7 @@ fn gui_frame(
                     try dvui.label(@src(), "Posts", .{}, .{ .font_style = .title_1 });
 
                     if (try theme.button(@src(), "New post", .{}, .{})) {
-                        try conn.transaction();
-                        errdefer conn.rollback();
-
-                        try history.foldRedos(conn, state.history.redos);
-
-                        try sql.execNoArgs(conn, "insert into post default values");
-                        const new_post_id = conn.lastInsertedRowId();
-                        try sql.exec(conn, "update gui_scene set current_scene = ?", .{@intFromEnum(Scene.editing)});
-                        try sql.exec(conn, "update gui_scene_editing set post_id = ?", .{new_post_id});
-
-                        try queries.setStatusText(arena, conn, "Created post #{d}.", .{new_post_id});
-
-                        try history.addUndoBarrier(.create_post, conn);
-
-                        try conn.commit();
+                        try core.handleAction(conn, arena, .create_post);
                     }
 
                     for (scene.posts, 0..) |post, i| {
@@ -406,7 +391,7 @@ fn gui_frame(
                         defer hbox.deinit();
 
                         if (try theme.button(@src(), "Edit", .{}, .{})) {
-                            try core.handleAction(conn, .{ .edit_post = post.id });
+                            try core.handleAction(conn, arena, .{ .edit_post = post.id });
                         }
 
                         try dvui.label(
@@ -450,12 +435,12 @@ fn gui_frame(
                         .{ .expand = .horizontal },
                     );
                     if (title_entry.text_changed) {
-                        try conn.transaction();
-                        errdefer conn.rollback();
-                        defer conn.commit() catch unreachable;
-                        try history.foldRedos(conn, state.history.redos);
-                        try sql.exec(conn, "update post set title=? where id=?", .{ title_entry.getText(), scene.post.id });
-                        try history.addUndoBarrier(.update_post_title, conn);
+                        try core.handleAction(conn, arena, .{
+                            .update_post_title = .{
+                                .id = scene.post.id,
+                                .title = title_entry.getText(),
+                            },
+                        });
                     }
                     title_entry.deinit();
 
@@ -479,12 +464,12 @@ fn gui_frame(
                         },
                     );
                     if (content_entry.text_changed) {
-                        try conn.transaction();
-                        errdefer conn.rollback();
-                        try history.foldRedos(conn, state.history.redos);
-                        try sql.exec(conn, "update post set content=? where id=?", .{ content_entry.getText(), scene.post.id });
-                        try history.addUndoBarrier(.update_post_content, conn);
-                        try conn.commit();
+                        try core.handleAction(conn, arena, .{
+                            .update_post_content = .{
+                                .id = scene.post.id,
+                                .content = content_entry.getText(),
+                            },
+                        });
                     }
                     content_entry.deinit();
 
@@ -498,19 +483,11 @@ fn gui_frame(
                         if ((scene.post.title.len > 0 or scene.post.content.len > 0) and
                             try theme.button(@src(), "Back", .{}, .{}))
                         {
-                            try conn.transaction();
-                            errdefer conn.rollback();
-                            try history.foldRedos(conn, state.history.redos);
-                            try conn.exec("update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
-                            try history.addUndoBarrier(.list_posts, conn);
-                            try conn.commit();
+                            try core.handleAction(conn, arena, .list_posts);
                         }
 
                         if (try theme.button(@src(), "Delete", .{}, .{})) {
-                            try sql.execNoArgs(conn, std.fmt.comptimePrint(
-                                "insert into gui_modal(kind) values({d})",
-                                .{@intFromEnum(Modal.confirm_post_deletion)},
-                            ));
+                            try core.handleAction(conn, arena, .{ .delete_post = scene.post.id });
                         }
 
                         try dvui.label(@src(), "{s}", .{state.status_text}, .{
@@ -537,32 +514,11 @@ fn gui_frame(
                             defer hbox.deinit();
 
                             if (try theme.button(@src(), "Yes", .{}, .{})) {
-                                try conn.transaction();
-                                errdefer conn.rollback();
-                                try history.foldRedos(conn, state.history.redos);
-
-                                try sql.exec(conn, "delete from post where id=?", .{scene.post.id});
-                                try sql.exec(conn, "update gui_scene set current_scene=?", .{@intFromEnum(Scene.listing)});
-                                try sql.execNoArgs(conn, std.fmt.comptimePrint(
-                                    "delete from gui_modal where kind={d}",
-                                    .{@intFromEnum(Modal.confirm_post_deletion)},
-                                ));
-                                try queries.setStatusText(
-                                    arena,
-                                    conn,
-                                    "Deleted post #{d}.",
-                                    .{scene.post.id},
-                                );
-
-                                try history.addUndoBarrier(.delete_post, conn);
-                                try conn.commit();
+                                try core.handleAction(conn, arena, .{ .delete_post_yes = scene.post.id });
                             }
 
                             if (try theme.button(@src(), "No", .{}, .{})) {
-                                try sql.execNoArgs(conn, std.fmt.comptimePrint(
-                                    "delete from gui_modal where kind={d}",
-                                    .{@intFromEnum(Modal.confirm_post_deletion)},
-                                ));
+                                try core.handleAction(conn, arena, .{ .delete_post_no = scene.post.id });
                             }
                         }
                     }

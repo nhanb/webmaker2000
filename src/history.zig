@@ -10,6 +10,19 @@ pub const Barrier = struct {
     action: core.ActionEnum,
 };
 
+pub fn shouldSkip(action: core.ActionEnum) bool {
+    return switch (action) {
+        .create_post => false,
+        .update_post_title => false,
+        .update_post_content => false,
+        .edit_post => false,
+        .list_posts => false,
+        .delete_post => true,
+        .delete_post_yes => false,
+        .delete_post_no => true,
+    };
+}
+
 const HISTORY_TABLES = &.{
     "post",
     "gui_scene",
@@ -217,9 +230,11 @@ pub fn undo(
         .create_post => "Undo: Create post.",
         .update_post_title => "Undo: Update post title.",
         .update_post_content => "Undo: Update post content.",
-        .delete_post => "Undo: Delete post.",
         .edit_post => "Undo: View post.",
         .list_posts => "Undo: View posts list.",
+        .delete_post => unreachable,
+        .delete_post_yes => "Undo: Delete post.",
+        .delete_post_no => unreachable,
     };
     try queries.setStatusTextNoAlloc(conn, status_text);
 }
@@ -256,14 +271,16 @@ pub fn getBarriers(
 // For text input changes, skip creating an undo barrier if this change is
 // within a few seconds since the last change.
 // This also cleans up trailing history_undo records in such cases.
-fn shouldDebounceBarrier(action: core.ActionEnum, conn: zqlite.Conn) !bool {
+fn debounceIfNeeded(action: core.ActionEnum, conn: zqlite.Conn) !bool {
     const is_debounceable = switch (action) {
         .create_post => false,
         .update_post_title => true,
         .update_post_content => true,
-        .delete_post => false,
         .edit_post => false,
         .list_posts => false,
+        .delete_post => unreachable,
+        .delete_post_yes => false,
+        .delete_post_no => unreachable,
     };
     if (!is_debounceable) return false;
 
@@ -293,7 +310,7 @@ pub fn addUndoBarrier(
     action: core.ActionEnum,
     conn: zqlite.Conn,
 ) !void {
-    if (try shouldDebounceBarrier(action, conn)) {
+    if (try debounceIfNeeded(action, conn)) {
         return;
     }
 
@@ -364,9 +381,11 @@ pub fn redo(
         .create_post => "Redo: Create post.",
         .update_post_title => "Redo: Update post title.",
         .update_post_content => "Redo: Update post content.",
-        .delete_post => "Redo: Delete post.",
         .edit_post => "Redo: View post.",
         .list_posts => "Redo: View posts list.",
+        .delete_post => unreachable,
+        .delete_post_yes => "Redo: Delete post.",
+        .delete_post_no => unreachable,
     };
     try queries.setStatusTextNoAlloc(conn, status_text);
 }
