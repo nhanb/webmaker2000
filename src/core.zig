@@ -24,7 +24,7 @@ pub const Core = struct {
             return error.ActionNotImplemented;
         }
 
-        try conn.transaction();
+        try sql.execNoArgs(conn, "begin immediate");
         errdefer conn.rollback();
 
         const skip_history = history.shouldSkip(action);
