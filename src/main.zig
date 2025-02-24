@@ -83,7 +83,7 @@ pub fn main() !void {
         // anything at this stage.
 
         const existing_file_path = argv[1];
-        const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
+        const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
         core.maybe_db = try Database.init(gpa, conn, existing_file_path);
 
         try sql.execNoArgs(conn, "pragma foreign_keys = on");
@@ -219,7 +219,7 @@ fn gui_frame(
                             }
                         };
 
-                        const conn = try zqlite.open(
+                        const conn = try sql.openWithSaneDefaults(
                             new_file_path,
                             zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.Create,
                         );
@@ -257,7 +257,7 @@ fn gui_frame(
                         // frame:
                         request_new_frame = true;
 
-                        const conn = try zqlite.open(existing_file_path, zqlite.OpenFlags.EXResCode);
+                        const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
                         core.maybe_db = try Database.init(gpa, conn, existing_file_path);
 
                         try sql.execNoArgs(conn, "pragma foreign_keys = on");

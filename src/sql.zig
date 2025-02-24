@@ -4,6 +4,15 @@
 const std = @import("std");
 const zqlite = @import("zqlite");
 
+pub fn openWithSaneDefaults(path: [:0]const u8, flags: c_int) !zqlite.Conn {
+    const conn = try zqlite.open(path, flags);
+    try execNoArgs(conn,
+        \\PRAGMA foreign_keys = 1;
+        \\PRAGMA busy_timeout = 3000;
+    );
+    return conn;
+}
+
 pub fn exec(conn: zqlite.Conn, sql: []const u8, args: anytype) !void {
     conn.exec(sql, args) catch |err| {
         std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
