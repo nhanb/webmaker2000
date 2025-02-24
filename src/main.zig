@@ -37,7 +37,7 @@ pub fn main() !void {
         .allocator = gpa,
         .size = .{ .w = 800.0, .h = 600.0 },
         .min_size = .{ .w = 500.0, .h = 350.0 },
-        .vsync = true,
+        .vsync = false,
         .title = "WebMaker2000",
         .icon = @embedFile("favicon.png"),
     });
@@ -131,12 +131,7 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = Backend.c.SDL_RenderClear(backend.renderer);
 
-        const request_new_frame = try gui_frame(
-            &core,
-            &backend,
-            arena.allocator(),
-            gpa,
-        );
+        try gui_frame(&core, &backend, arena.allocator(), gpa);
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -151,10 +146,9 @@ pub fn main() !void {
 
         // waitTime and beginWait combine to achieve variable framerates
         const wait_event_micros = win.waitTime(end_micros, null);
-        backend.waitEventTimeout(if (request_new_frame)
-            0
-        else
-            wait_event_micros);
+        //backend.waitEventTimeout(wait_event_micros);
+        _ = wait_event_micros;
+        backend.waitEventTimeout(0);
     }
 
     if (maybe_server) |_| {
@@ -167,9 +161,7 @@ fn gui_frame(
     backend: *dvui.backend,
     arena: std.mem.Allocator,
     gpa: std.mem.Allocator, // for data that needs to survive to next frame
-) !bool {
-    var request_new_frame = false;
-
+) !void {
     var background = try dvui.overlay(@src(), .{
         .expand = .both,
         .background = true,
@@ -208,7 +200,7 @@ fn gui_frame(
                         // file is chosen. Therefore, we need to manually
                         // tell dvui to draw the next frame right after this
                         // frame:
-                        request_new_frame = true;
+                        dvui.refresh(null, @src(), null);
 
                         // Assuming the native "save file" dialog has
                         // already asked for user confirmation if the chosen
@@ -255,7 +247,7 @@ fn gui_frame(
                         // file is chosen. Therefore, we need to manually
                         // tell dvui to draw the next frame right after this
                         // frame:
-                        request_new_frame = true;
+                        dvui.refresh(null, @src(), null);
 
                         const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
                         core.maybe_db = try Database.init(gpa, conn, existing_file_path);
@@ -365,6 +357,10 @@ fn gui_frame(
                         .{miliseconds},
                     );
                 }
+
+                var buf: [100]u8 = undefined;
+                const fps_str = std.fmt.bufPrint(&buf, "{d:0>3.0} fps", .{dvui.FPS()}) catch unreachable;
+                try dvui.label(@src(), "{s}", .{fps_str}, .{ .gravity_x = 1 });
 
                 const url = switch (state.scene) {
                     .listing => try allocPrint(arena, "http://localhost:{d}", .{PORT}),
@@ -526,6 +522,4 @@ fn gui_frame(
             }
         },
     }
-
-    return request_new_frame;
 }
