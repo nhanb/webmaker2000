@@ -23,3 +23,7 @@ pub fn setStatusTextNoAlloc(conn: zqlite.Conn, text: []const u8) !void {
         \\set status_text=?, expires_at = datetime('now', '+5 seconds')
     , .{text});
 }
+
+pub fn clearStatusText(conn: zqlite.Conn) !void {
+    return sql.execNoArgs(conn, "update gui_status_text set status_text=''");
+}

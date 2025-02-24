@@ -27,6 +27,8 @@ pub const Core = struct {
         try sql.execNoArgs(conn, "begin immediate");
         errdefer conn.rollback();
 
+        try queries.clearStatusText(conn);
+
         const skip_history = history.shouldSkip(action);
         if (!skip_history) {
             try history.foldRedos(conn, self.state.opened.history.redos);
