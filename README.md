@@ -6,6 +6,9 @@ unapologetically spartan GUI:
 
 ![](screenshot.webp)
 
+More up-to-date screenshots can be found
+[here](https://github.com/nhanb/webmaker2000/issues/1).
+
 The implementation is an experiment in [rubbing sqlite][1] on a desktop GUI:
 
 Both data and GUI state are stored in an sqlite3 database, all of which are
