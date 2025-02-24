@@ -45,46 +45,46 @@ pub fn init(gpa: mem.Allocator, port: u16, file_path: [:0]const u8) !*Server {
 }
 
 pub fn deinit(self: *Server) void {
-    self.gpa.free(self.file_path);
     self.net_server.deinit();
+    self.gpa.free(self.file_path);
     self.gpa.destroy(self);
     print("Server shut down.\n", .{});
 }
 
 fn start_server(self: *Server) !void {
+    while (true) {
+        print("Waiting for new connection...\n", .{});
+        const connection = self.net_server.accept() catch |err| {
+            print("Connection to client interrupted: {}\n", .{err});
+            continue;
+        };
+        var thread = try std.Thread.spawn(.{}, handle_request, .{ connection, self.file_path });
+        thread.detach();
+    }
+}
+
+fn handle_request(connection: net.Server.Connection, file_path: [:0]const u8) !void {
+    print("Incoming request\n", .{});
+    defer connection.stream.close();
+
+    var read_buffer: [1024 * 512]u8 = undefined;
+    var http_server = http.Server.init(connection, &read_buffer);
+
+    var request = http_server.receiveHead() catch |err| {
+        print("Could not read head: {}\n", .{err});
+        return;
+    };
+
+    print("Server serving {s}\n", .{request.head.target});
+
     var conn = try zqlite.Conn.init(
-        self.file_path,
+        file_path,
         zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.ReadOnly,
     );
     defer conn.close();
 
-    while (true) {
-        var connection = self.net_server.accept() catch |err| {
-            print("Connection to client interrupted: {}\n", .{err});
-            continue;
-        };
-        defer connection.stream.close();
-
-        var read_buffer: [1024]u8 = undefined;
-        var http_server = http.Server.init(connection, &read_buffer);
-
-        var request = http_server.receiveHead() catch |err| {
-            print("Could not read head: {}\n", .{err});
-            continue;
-        };
-
-        handle_request(&request, conn) catch |err| {
-            print("Could not handle request: {}\n", .{err});
-            continue;
-        };
-    }
-}
-
-fn handle_request(request: *http.Server.Request, conn: zqlite.Conn) !void {
-    print("Server serving {s}\n", .{request.head.target});
-
     // very dumb code just to confirm db connection works
-    const id = try std.fmt.parseInt(i64, request.head.target["/".len..], 10);
+    const id = request.head.target["/".len..];
     const row = try sql.selectRow(conn, "select title from post where id=?", .{id});
     if (row) |r| {
         defer r.deinit();
