@@ -37,7 +37,7 @@ pub fn main() !void {
         .allocator = gpa,
         .size = .{ .w = 800.0, .h = 600.0 },
         .min_size = .{ .w = 500.0, .h = 350.0 },
-        .vsync = false,
+        .vsync = true,
         .title = "WebMaker2000",
         .icon = @embedFile("favicon.png"),
     });
@@ -110,7 +110,7 @@ pub fn main() !void {
     // In each frame:
     // - make sure arena is reset
     // - read gui_state fresh from database
-    // - (the is are dvui boilerplate)
+    // - (the rest is dvui boilerplate)
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
@@ -146,9 +146,7 @@ pub fn main() !void {
 
         // waitTime and beginWait combine to achieve variable framerates
         const wait_event_micros = win.waitTime(end_micros, null);
-        //backend.waitEventTimeout(wait_event_micros);
-        _ = wait_event_micros;
-        backend.waitEventTimeout(0);
+        backend.waitEventTimeout(wait_event_micros);
     }
 
     if (maybe_server) |_| {
@@ -294,16 +292,11 @@ fn gui_frame(
 
             // Actual GUI starts here
 
-            var scroll = try dvui.scrollArea(
-                @src(),
-                .{},
-                .{
-                    .expand = .both,
-                    .color_fill = .{ .name = .fill_window },
-                    .corner_radius = dvui.Rect.all(0),
-                },
-            );
-            defer scroll.deinit();
+            var frame = try dvui.box(@src(), .vertical, .{
+                .expand = .both,
+                .background = true,
+            });
+            defer frame.deinit();
 
             {
                 var toolbar = try dvui.box(
@@ -382,20 +375,36 @@ fn gui_frame(
                         try core.handleAction(conn, arena, .create_post);
                     }
 
-                    for (scene.posts, 0..) |post, i| {
-                        var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
-                        defer hbox.deinit();
+                    {
+                        var scroll = try dvui.scrollArea(@src(), .{}, .{
+                            .expand = .both,
+                            .max_size_content = .{
+                                // FIXME: how to avoid hardcoded max height?
+                                .h = dvui.windowRect().h - 170,
+                            },
+                            //.padding = .{ .x = 5 },
+                            .margin = .all(5),
+                            .corner_radius = .all(5),
+                            .border = .all(1),
+                            //.color_border = .{ .color = .{ .r = 0x88, .g = 0x88, .b = 0x88 } },
+                        });
+                        defer scroll.deinit();
 
-                        if (try theme.button(@src(), "Edit", .{}, .{})) {
-                            try core.handleAction(conn, arena, .{ .edit_post = post.id });
+                        for (scene.posts, 0..) |post, i| {
+                            var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
+                            defer hbox.deinit();
+
+                            if (try theme.button(@src(), "Edit", .{}, .{})) {
+                                try core.handleAction(conn, arena, .{ .edit_post = post.id });
+                            }
+
+                            try dvui.label(
+                                @src(),
+                                "{d}. {s}",
+                                .{ post.id, post.title },
+                                .{ .id_extra = i, .gravity_y = 0.5 },
+                            );
                         }
-
-                        try dvui.label(
-                            @src(),
-                            "{d}. {s}",
-                            .{ post.id, post.title },
-                            .{ .id_extra = i, .gravity_y = 0.5 },
-                        );
                     }
 
                     try dvui.label(@src(), "{s}", .{state.status_text}, .{
