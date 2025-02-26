@@ -11,7 +11,7 @@ const generate = @import("generate.zig");
 const djot = @import("djot.zig");
 const queries = @import("queries.zig");
 const Database = @import("Database.zig");
-const Server = @import("Server.zig");
+const server = @import("server.zig");
 const constants = @import("constants.zig");
 const PORT = constants.PORT;
 const EXTENSION = constants.EXTENSION;
@@ -25,12 +25,23 @@ comptime {
 }
 const Backend = dvui.backend;
 
-var maybe_server: ?*Server = null;
+var maybe_server: ?server.Server = null;
 
 pub fn main() !void {
-    var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa = gpa_instance.allocator();
-    defer _ = gpa_instance.deinit();
+    var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa = gpa_impl.allocator();
+    defer _ = gpa_impl.deinit();
+
+    const argv = try std.process.argsAlloc(gpa);
+    defer std.process.argsFree(gpa, argv);
+
+    // wm2k <SERVER_CMD> <DB_PATH> <PORT>
+    // to start a web server.
+    // This is to be run as a subprocess called by the main program.
+    if (argv.len == 4 and std.mem.eql(u8, argv[1], server.SERVER_CMD)) {
+        try server.serve(gpa, argv[2], argv[3]);
+        return;
+    }
 
     // init SDL backend (creates and owns OS window)
     var backend = try Backend.initWindow(.{
@@ -76,8 +87,6 @@ pub fn main() !void {
     var core = Core{};
     defer core.deinit();
 
-    const argv = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, argv);
     if (argv.len == 2 and std.mem.endsWith(u8, argv[1], "." ++ EXTENSION)) {
         // TODO: how to handle errors (e.g. file not found) here? We can't draw
         // anything at this stage.
@@ -97,7 +106,7 @@ pub fn main() !void {
         defer gpa.free(window_title);
         _ = Backend.c.SDL_SetWindowTitle(backend.window, window_title);
 
-        maybe_server = try Server.init(gpa, PORT, existing_file_path);
+        maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
     }
 
     try djot.init(gpa);
@@ -230,7 +239,7 @@ fn gui_frame(
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
 
-                        maybe_server = try Server.init(gpa, PORT, new_file_path);
+                        maybe_server = try server.Server.init(gpa, new_file_path, PORT);
                     }
                 }
 
@@ -262,7 +271,7 @@ fn gui_frame(
                             try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
 
-                        maybe_server = try Server.init(gpa, PORT, existing_file_path);
+                        maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
                     }
                 }
             }

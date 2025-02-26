@@ -4,6 +4,7 @@ const ziglua = @import("ziglua");
 const djot_lua = @embedFile("djot.lua");
 
 var lua: *ziglua.Lua = undefined;
+var lua_mut = std.Thread.Mutex{};
 
 /// Initialize the lua VM and load the necessary djot.lua library code.
 /// Remember to call deinit() when you're all done.
@@ -37,9 +38,11 @@ pub fn deinit() void {
 }
 
 /// The returned string is owned by the caller.
-/// This function is not thread-safe. To make it so, we'll probably need to
-/// turn this into a worker thread that pops inputs from a queue.
+/// This function is thread-safe.
 pub fn toHtml(gpa: std.mem.Allocator, input: []const u8) ![]const u8 {
+    lua_mut.lock();
+    defer lua_mut.unlock();
+
     // call the global djotToHtml function
     _ = try lua.getGlobal("djotToHtml");
     _ = lua.pushString(input);

@@ -7,59 +7,55 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const djot = @import("djot.zig");
 
-const Server = @This();
+pub const SERVER_CMD = "server";
 
-gpa: mem.Allocator,
-address: net.Address,
-net_server: net.Server,
-file_path: [:0]const u8,
+/// Spawn a child process that starts the http preview server
+pub const Server = struct {
+    process: std.process.Child,
 
-pub fn init(gpa: mem.Allocator, port: u16, file_path: [:0]const u8) !*Server {
+    pub fn init(gpa: mem.Allocator, db_path: []const u8, port: u16) !Server {
+        var exe_path_buf: [1024 * 5]u8 = undefined;
+        const exe_path = try std.fs.selfExePath(&exe_path_buf);
+
+        var port_buf: [5]u8 = undefined;
+        const port_str = std.fmt.bufPrintIntToSlice(&port_buf, port, 10, .upper, .{});
+
+        const command: []const []const u8 = &.{
+            exe_path,
+            SERVER_CMD,
+            db_path,
+            port_str,
+        };
+        var proc = std.process.Child.init(command, gpa);
+        try proc.spawn();
+
+        return .{ .process = proc };
+    }
+
+    pub fn deinit(self: *Server) void {
+        _ = self.process.kill() catch unreachable;
+    }
+};
+
+/// Main entry point of the preview server subprocess:
+pub fn serve(gpa: mem.Allocator, file_path: [:0]const u8, port_str: []const u8) !void {
+    const port = try std.fmt.parseInt(u16, port_str, 10);
+
+    try djot.init(gpa);
+    defer djot.deinit();
+
     print("Server starting at http://localhost:{d}\n", .{port});
 
-    var server = try gpa.create(Server);
-    server.* = .{
-        .gpa = gpa,
-        .address = try net.Address.parseIp4("127.0.0.1", port),
-        .net_server = try server.address.listen(.{ .reuse_address = true }),
-        .file_path = try gpa.dupeZ(u8, file_path),
-    };
+    const address = try net.Address.parseIp4("127.0.0.1", port);
+    var net_server = try address.listen(.{ .reuse_address = true });
 
-    // Run server in separate thread, then detach() so it doesn't block the
-    // whole program from exiting. Worst case scenario, the thread gets killed
-    // before its sqlite connection is properly closed, but since this is a
-    // read-only sqlite connection, it's Probably Okay (tm).
-    //
-    // I previously tried to conditionally break the loop in start_server by
-    // sending a special http request to the server itself, but Chrome on
-    // Windows would automatically open a connection without sending anything:
-    // <https://stackoverflow.com/questions/47336535/why-does-chrome-open-a-connection-but-not-send-anything>
-    // , presumably to appear more speedy. This unfortunately deadlocked
-    // the loop before our special "shutdown" request could be received.
-    //
-    // So here we are, detach()-ing the thread into the ether and trying not to
-    // worry too much about it...
-    var thread = try std.Thread.spawn(.{}, start_server, .{server});
-    thread.detach();
-
-    return server;
-}
-
-pub fn deinit(self: *Server) void {
-    self.net_server.deinit();
-    self.gpa.free(self.file_path);
-    self.gpa.destroy(self);
-    print("Server shut down.\n", .{});
-}
-
-fn start_server(self: *Server) !void {
     while (true) {
         print("Waiting for new connection...\n", .{});
-        const connection = self.net_server.accept() catch |err| {
+        const connection = net_server.accept() catch |err| {
             print("Connection to client interrupted: {}\n", .{err});
             continue;
         };
-        var thread = try std.Thread.spawn(.{}, handle_request, .{ connection, self.file_path });
+        var thread = try std.Thread.spawn(.{}, handle_request, .{ connection, file_path });
         thread.detach();
     }
 }
