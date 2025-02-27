@@ -6,6 +6,7 @@ const print = std.debug.print;
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const djot = @import("djot.zig");
+const sitefs = @import("sitefs.zig");
 
 pub const SERVER_CMD = "server";
 
@@ -87,24 +88,24 @@ fn handle_request(connection: net.Server.Connection, file_path: [:0]const u8) !v
     defer arena_imp.deinit();
     const arena = arena_imp.allocator();
 
-    // very dumb code just to confirm db connection works
-    const id = request.head.target["/".len..];
-    const row = try sql.selectRow(conn, "select title, content from post where id=?", .{id});
-    if (row) |r| {
-        defer r.deinit();
-
-        const title = r.text(0);
-        const content = r.text(1);
-        const content_html = try djot.toHtml(arena, content);
-
-        const full_html = try std.fmt.allocPrint(arena,
-            \\<head><title>{s}</title></head>
-            \\<h1>{s}</h1>
-            \\{s}
-        , .{ title, title, content_html });
-
-        try request.respond(full_html, .{});
-    } else {
-        try request.respond("nope", .{});
+    const response = try sitefs.serve(arena, conn, request.head.target);
+    switch (response) {
+        .success => |body| {
+            try request.respond(body, .{});
+        },
+        .not_found => {
+            try request.respond("404 Not Found", .{ .status = .not_found });
+        },
+        .redirect => |path| {
+            try request.respond("", .{
+                .status = .moved_permanently,
+                .extra_headers = &.{
+                    .{
+                        .name = "Location",
+                        .value = path,
+                    },
+                },
+            });
+        },
     }
 }
