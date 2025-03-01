@@ -7,6 +7,7 @@ const fs = std.fs;
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const djot = @import("djot.zig");
+const html = @import("html.zig");
 
 const MAX_URL_LEN = 2048; // https://stackoverflow.com/a/417184
 
@@ -75,13 +76,13 @@ pub fn read(args: ReadArgs) !ReadResult {
         // a dir for each post
         // TODO: right now it's id but it should be slug in the future.
         var rows = try sql.rows(conn, "select id from post order by id", .{});
+        defer rows.deinit();
         while (rows.next()) |row| {
             const slug = try arena.dupe(u8, row.text(0));
             try children.append(
                 try allocPrint(arena, "{s}{s}", .{ prefix, slug }),
             );
         }
-        defer rows.deinit();
 
         return .{ .dir = children.items };
     }
@@ -89,8 +90,45 @@ pub fn read(args: ReadArgs) !ReadResult {
     assert(path[0] != '/');
     assert(path[path.len - 1] != '/');
 
+    // Home page
     if (mem.eql(u8, path, "index.html")) {
-        return .{ .file = "hello" };
+        var h = html.Builder{ .allocator = arena };
+
+        var posts = std.ArrayList(html.Element).init(arena);
+
+        var rows = try sql.rows(conn, "select id, title from post order by id desc", .{});
+        defer rows.deinit();
+        while (rows.next()) |row| {
+            const slug = try arena.dupe(u8, row.text(0));
+            const title = try arena.dupe(u8, row.text(1));
+            try posts.append(
+                h.li(null, .{
+                    h.a(
+                        .{ .href = try allocPrint(arena, "{s}/", .{slug}) },
+                        .{title},
+                    ),
+                }),
+            );
+        }
+
+        var content = h.html(
+            .{ .lang = "en" },
+            .{
+                h.head(null, .{
+                    h.meta(.{ .charset = "utf-8" }),
+                    h.meta(.{ .name = "viewport", .content = "width=device-width, initial-scale=1.0" }),
+                    h.title(null, .{"Home | WebMaker2000 Preview"}),
+                    //h.link(.{ .rel = "stylesheet", .href = static.style_css.url_path }),
+                    //h.link(.{ .rel = "icon", .type = "image/png", .href = static.developers_png.url_path }),
+                }),
+                h.body(null, .{
+                    h.h1(null, .{"Home"}),
+                    h.ul(null, .{posts.items}),
+                }),
+            },
+        );
+
+        return .{ .file = try content.toHtml(arena) };
     }
 
     var parts = mem.splitScalar(u8, path, '/');
