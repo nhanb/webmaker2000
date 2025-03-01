@@ -7,7 +7,6 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const history = @import("history.zig");
 const theme = @import("theme.zig");
-const generate = @import("generate.zig");
 const djot = @import("djot.zig");
 const queries = @import("queries.zig");
 const Database = @import("Database.zig");
@@ -19,6 +18,7 @@ const core_ = @import("core.zig");
 const GuiState = core_.GuiState;
 const Modal = core_.Modal;
 const Core = core_.Core;
+const sitefs = @import("sitefs.zig");
 
 comptime {
     std.debug.assert(dvui.backend_kind == .sdl);
@@ -349,7 +349,7 @@ fn gui_frame(
 
                     var out_dir = try cwd.makeOpenPath(output_path, .{});
                     defer out_dir.close();
-                    try generate.all(conn, arena, out_dir);
+                    try sitefs.generate(arena, conn, "", out_dir);
 
                     const miliseconds = timer.read() / 1_000_000;
                     try queries.setStatusText(

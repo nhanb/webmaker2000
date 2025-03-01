@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 const allocPrint = std.fmt.allocPrint;
 const mem = std.mem;
+const fs = std.fs;
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const djot = @import("djot.zig");
@@ -28,6 +29,7 @@ pub fn serve(arena: mem.Allocator, conn: zqlite.Conn, path: []const u8) !Respons
             .conn = conn,
             .path = path["/".len..],
         });
+
     return switch (read_result) {
         .file => |content| .{ .success = content },
         .dir => .{ .redirect = try allocPrint(arena, "{s}/", .{path}) },
@@ -37,7 +39,7 @@ pub fn serve(arena: mem.Allocator, conn: zqlite.Conn, path: []const u8) !Respons
 
 pub const ReadResult = union(enum) {
     file: []const u8,
-    dir: [][]const u8,
+    dir: []const []const u8,
     not_found: void,
 };
 
@@ -50,21 +52,52 @@ const ReadArgs = struct {
 
 pub fn read(args: ReadArgs) !ReadResult {
     const path = args.path;
+    const arena = args.arena;
+    const conn = args.conn;
+    const list_children = args.list_children;
+
     print("stat: {s}\n", .{path});
 
+    const prefix = if (path.len == 0)
+        ""
+    else
+        try allocPrint(arena, "{s}/", .{path});
+
+    // Root dir:
     if (path.len == 0) {
-        // TODO: list root dir's children
-        return .{ .dir = &.{} };
+        if (!list_children) return .{ .dir = &.{} };
+
+        var children = std.ArrayList([]const u8).init(arena);
+
+        // index.html
+        try children.append(try allocPrint(arena, "{s}index.html", .{prefix}));
+
+        // a dir for each post
+        // TODO: right now it's id but it should be slug in the future.
+        var rows = try sql.rows(conn, "select id from post order by id", .{});
+        while (rows.next()) |row| {
+            const slug = try arena.dupe(u8, row.text(0));
+            try children.append(
+                try allocPrint(arena, "{s}{s}", .{ prefix, slug }),
+            );
+        }
+        defer rows.deinit();
+
+        return .{ .dir = children.items };
     }
 
     assert(path[0] != '/');
     assert(path[path.len - 1] != '/');
 
+    if (mem.eql(u8, path, "index.html")) {
+        return .{ .file = "hello" };
+    }
+
     var parts = mem.splitScalar(u8, path, '/');
     const post_slug = parts.next().?;
 
     const maybe_row = try sql.selectRow(
-        args.conn,
+        conn,
         "select title, content from post where id=?",
         .{post_slug},
     );
@@ -80,17 +113,21 @@ pub fn read(args: ReadArgs) !ReadResult {
             return .not_found;
         }
     } else {
-        // TODO: list post dir's children (only index.html for now)
-        return .{ .dir = &.{} };
+        // Post dir only has index.html as child for now.
+        // Later post assets will also end up here.
+        const child = try allocPrint(arena, "{s}index.html", .{prefix});
+        var children = try std.ArrayList([]const u8).initCapacity(arena, 1);
+        try children.append(child);
+        return .{ .dir = children.items };
     }
 
     // At this point we're sure our caller is requesting /<slug>/index.html
 
     const title = row.text(0);
     const content = row.text(1);
-    const content_html = try djot.toHtml(args.arena, content);
+    const content_html = try djot.toHtml(arena, content);
 
-    const full_html = try std.fmt.allocPrint(args.arena,
+    const full_html = try std.fmt.allocPrint(arena,
         \\<head><title>{s}</title></head>
         \\<h1>{s}</h1>
         \\{s}
@@ -99,4 +136,30 @@ pub fn read(args: ReadArgs) !ReadResult {
     return .{ .file = full_html };
 }
 
-// TODO: children(), walk() to generate static site
+pub fn generate(
+    arena: mem.Allocator,
+    conn: zqlite.Conn,
+    in_path: []const u8,
+    out_dir: fs.Dir,
+) !void {
+    switch (try read(.{
+        .conn = conn,
+        .path = in_path,
+        .arena = arena,
+        .list_children = true,
+    })) {
+        .file => |data| {
+            try out_dir.writeFile(.{
+                .sub_path = in_path,
+                .data = data,
+            });
+        },
+        .dir => |children| {
+            if (in_path.len > 0) try out_dir.makeDir(in_path);
+            for (children) |child_path| {
+                try generate(arena, conn, child_path, out_dir);
+            }
+        },
+        .not_found => unreachable,
+    }
+}
