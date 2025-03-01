@@ -22,7 +22,13 @@ pub fn serve(arena: mem.Allocator, conn: zqlite.Conn, path: []const u8) !Respons
         return serve(arena, conn, try allocPrint(arena, "{s}index.html", .{path}));
     }
 
-    return switch (try read(arena, conn, path["/".len..])) {
+    const read_result =
+        try read(.{
+            .arena = arena,
+            .conn = conn,
+            .path = path["/".len..],
+        });
+    return switch (read_result) {
         .file => |content| .{ .success = content },
         .dir => .{ .redirect = try allocPrint(arena, "{s}/", .{path}) },
         .not_found => .not_found,
@@ -35,24 +41,30 @@ pub const ReadResult = union(enum) {
     not_found: void,
 };
 
-pub fn read(arena: mem.Allocator, conn: zqlite.Conn, path: []const u8) !ReadResult {
+const ReadArgs = struct {
+    arena: mem.Allocator,
+    conn: zqlite.Conn,
+    path: []const u8,
+    list_children: bool = false,
+};
+
+pub fn read(args: ReadArgs) !ReadResult {
+    const path = args.path;
     print("stat: {s}\n", .{path});
 
-    if (mem.eql(u8, path, "") or
-        mem.eql(u8, path, ".") or
-        mem.eql(u8, path, "/"))
-    {
+    if (path.len == 0) {
         // TODO: list root dir's children
         return .{ .dir = &.{} };
     }
 
+    assert(path[0] != '/');
     assert(path[path.len - 1] != '/');
 
     var parts = mem.splitScalar(u8, path, '/');
     const post_slug = parts.next().?;
 
     const maybe_row = try sql.selectRow(
-        conn,
+        args.conn,
         "select title, content from post where id=?",
         .{post_slug},
     );
@@ -76,9 +88,9 @@ pub fn read(arena: mem.Allocator, conn: zqlite.Conn, path: []const u8) !ReadResu
 
     const title = row.text(0);
     const content = row.text(1);
-    const content_html = try djot.toHtml(arena, content);
+    const content_html = try djot.toHtml(args.arena, content);
 
-    const full_html = try std.fmt.allocPrint(arena,
+    const full_html = try std.fmt.allocPrint(args.arena,
         \\<head><title>{s}</title></head>
         \\<h1>{s}</h1>
         \\{s}
