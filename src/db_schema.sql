@@ -3,8 +3,9 @@ pragma user_version = 1;
 
 create table post (
     id integer primary key,
-    title text,
-    content text
+    slug text not null default '',
+    title text not null default '',
+    content text not null default ''
 );
 
 create table gui_scene (
@@ -19,6 +20,16 @@ create table gui_scene_editing (
     foreign key (post_id) references post (id) on delete set null
 );
 insert into gui_scene_editing (id) values (0);
+
+create view gui_current_post_err as
+select
+    p.id as post_id,
+    p.title == '' as empty_title,
+    p.slug == '' as empty_slug,
+    p.content == '' as empty_content,
+    exists(select 1 from post p1 where p1.slug = p.slug and p1.id <> p.id) as duplicate_slug
+from post p
+inner join gui_scene_editing e on e.post_id = p.id;
 
 create table gui_modal (
     id integer primary key check (id = 1),
@@ -56,9 +67,9 @@ create table history_barrier_redo (
 );
 
 -- TODO remove seed data
-insert into post (title, content) values
-    ('First!', 'This is my first post.'),
-    ('Second post', 'Hello I''m written in [djot](https://djot.net/).
+insert into post (slug, title, content) values
+    ('first', 'First!', 'This is my first post.'),
+    ('second', 'Second post', 'Hello I''m written in [djot](https://djot.net/).
 
 How''s your _day_ going?')
 ;

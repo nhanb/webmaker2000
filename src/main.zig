@@ -282,6 +282,9 @@ fn gui_frame(
             const db = core.maybe_db.?;
             const conn = db.conn;
 
+            const undos = state.history.undos;
+            const redos = state.history.redos;
+
             // Handle keyboard shortcuts
             const evts = dvui.events();
             for (evts) |*e| {
@@ -289,9 +292,9 @@ fn gui_frame(
                     .key => |key| {
                         if (key.action == .down) {
                             if (key.matchBind("wm2k_undo")) {
-                                try history.undo(conn, state.history.undos);
+                                try history.undo(conn, undos);
                             } else if (key.matchBind("wm2k_redo")) {
-                                try history.redo(conn, state.history.redos);
+                                try history.redo(conn, redos);
                             }
                         }
                     },
@@ -315,31 +318,27 @@ fn gui_frame(
                 );
                 defer toolbar.deinit();
 
-                const undo_opts: dvui.Options = if (state.history.undos.len == 0) .{
-                    .color_text = .{ .name = .fill_press },
-                    .color_text_press = .{ .name = .fill_press },
-                    .color_fill_hover = .{ .name = .fill_control },
-                    .color_fill_press = .{ .name = .fill_control },
-                    .color_accent = .{ .name = .fill_control },
-                } else .{};
-
-                if (try theme.button(@src(), "Undo", .{}, undo_opts)) {
-                    try history.undo(conn, state.history.undos);
+                if (try theme.button(
+                    @src(),
+                    "Undo",
+                    .{},
+                    if (undos.len == 0) theme.disabled_btn else .{},
+                )) {
+                    try history.undo(conn, undos);
                 }
 
-                const redo_opts: dvui.Options = if (state.history.redos.len == 0) .{
-                    .color_text = .{ .name = .fill_press },
-                    .color_text_press = .{ .name = .fill_press },
-                    .color_fill_hover = .{ .name = .fill_control },
-                    .color_fill_press = .{ .name = .fill_control },
-                    .color_accent = .{ .color = dvui.Color{ .a = 0x00 } },
-                } else .{};
-
-                if (try theme.button(@src(), "Redo", .{}, redo_opts)) {
-                    try history.redo(conn, state.history.redos);
+                if (try theme.button(
+                    @src(),
+                    "Redo",
+                    .{},
+                    if (redos.len == 0) theme.disabled_btn else .{},
+                )) {
+                    try history.redo(conn, redos);
                 }
 
-                if (try theme.button(@src(), "Generate", .{}, .{})) {
+                const generate_disabled = state.scene == .editing and state.scene.editing.post_errors.hasErrors();
+                const generate_opts: dvui.Options = if (generate_disabled) theme.disabled_btn else .{};
+                if (try theme.button(@src(), "Generate", .{}, generate_opts) and !generate_disabled) {
                     var timer = try std.time.Timer.start();
 
                     const output_path = db.output_path();
@@ -433,6 +432,7 @@ fn gui_frame(
                     try dvui.label(@src(), "Editing post #{d}", .{scene.post.id}, .{ .font_style = .title_1 });
 
                     var title_buf: []u8 = scene.post.title;
+                    var slug_buf: []u8 = scene.post.slug;
                     var content_buf: []u8 = scene.post.content;
 
                     try dvui.label(@src(), "Title:", .{}, .{});
@@ -446,7 +446,10 @@ fn gui_frame(
                                 },
                             },
                         },
-                        .{ .expand = .horizontal },
+                        if (scene.post_errors.empty_title)
+                            theme.invalid_text_entry
+                        else
+                            .{ .expand = .horizontal },
                     );
                     if (title_entry.text_changed) {
                         try core.handleAction(conn, arena, .{
@@ -457,6 +460,32 @@ fn gui_frame(
                         });
                     }
                     title_entry.deinit();
+
+                    try dvui.label(@src(), "Slug:", .{}, .{});
+                    var slug_entry = try dvui.textEntry(
+                        @src(),
+                        .{
+                            .text = .{
+                                .buffer_dynamic = .{
+                                    .backing = &slug_buf,
+                                    .allocator = arena,
+                                },
+                            },
+                        },
+                        if (scene.post_errors.empty_slug or scene.post_errors.duplicate_slug)
+                            theme.invalid_text_entry
+                        else
+                            .{ .expand = .horizontal },
+                    );
+                    if (slug_entry.text_changed) {
+                        try core.handleAction(conn, arena, .{
+                            .update_post_slug = .{
+                                .id = scene.post.id,
+                                .slug = slug_entry.getText(),
+                            },
+                        });
+                    }
+                    slug_entry.deinit();
 
                     try dvui.label(@src(), "Content:", .{}, .{});
                     var content_entry = try dvui.textEntry(
@@ -472,6 +501,7 @@ fn gui_frame(
                                 },
                             },
                         },
+                        // TODO: Oops
                         .{
                             .expand = .both,
                             .min_size_content = .{ .h = 80 },

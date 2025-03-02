@@ -26,11 +26,30 @@ pub fn default() dvui.Theme {
     dvui.ButtonWidget.defaults.corner_radius = dvui.Rect.all(0);
     dvui.ButtonWidget.defaults.border = .{ .h = 3, .w = 3, .x = 1, .y = 1 };
     dvui.ButtonWidget.defaults.padding = .{ .h = 2, .w = 6, .x = 6, .y = 2 };
-    dvui.TextEntryWidget.defaults.corner_radius = dvui.Rect.all(0);
+    dvui.TextEntryWidget.defaults.corner_radius = dvui.Rect.all(3);
+    dvui.TextEntryWidget.defaults.color_border = .{ .color = .{ .r = 0x99, .g = 0x99, .b = 0x99 } };
     dvui.FloatingWindowWidget.defaults.corner_radius = dvui.Rect.all(0);
 
     return theme;
 }
+
+pub const disabled_btn: dvui.Options = .{
+    .color_text = .{ .name = .fill_press },
+    .color_text_press = .{ .name = .fill_press },
+    .color_fill_hover = .{ .name = .fill_control },
+    .color_fill_press = .{ .name = .fill_control },
+    .color_accent = .{ .color = dvui.Color{ .a = 0x00 } },
+};
+
+pub const invalid_text_entry: dvui.Options = .{
+    .color_fill = .{ .color = .{ .r = 0xff, .g = 0xeb, .b = 0xe9 } },
+    .color_accent = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } },
+    .color_border = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } },
+
+    // TODO: I don't know how to "merge" 2 option structs in a function call
+    // yet, so I have to list regular non-disabled options here too.
+    .expand = .horizontal,
+};
 
 // AFAIK there's no way to set a "default font size for buttons only".
 // For such granularity, we need to override the opts param instead:

@@ -46,6 +46,9 @@ pub const Core = struct {
             .update_post_title => |data| {
                 try sql.exec(conn, "update post set title=? where id=?", .{ data.title, data.id });
             },
+            .update_post_slug => |data| {
+                try sql.exec(conn, "update post set slug=? where id=?", .{ data.slug, data.id });
+            },
             .update_post_content => |data| {
                 try sql.exec(conn, "update post set content=? where id=?", .{ data.content, data.id });
             },
@@ -95,6 +98,7 @@ pub const Core = struct {
 pub const ActionEnum = enum(i64) {
     create_post = 0,
     update_post_title = 1,
+    update_post_slug = 8,
     update_post_content = 2,
     edit_post = 3,
     list_posts = 4,
@@ -106,6 +110,7 @@ pub const ActionEnum = enum(i64) {
 pub const Action = union(ActionEnum) {
     create_post: void,
     update_post_title: struct { id: i64, title: []const u8 },
+    update_post_slug: struct { id: i64, slug: []const u8 },
     update_post_content: struct { id: i64, content: []const u8 },
     edit_post: i64,
     list_posts: void,
@@ -117,6 +122,7 @@ pub const Action = union(ActionEnum) {
 const Post = struct {
     id: i64,
     title: []u8,
+    slug: []u8,
     content: []u8,
 };
 
@@ -125,12 +131,27 @@ pub const Scene = enum(i64) {
     editing = 1,
 };
 
+pub const PostErrors = struct {
+    empty_title: bool,
+    empty_slug: bool,
+    empty_content: bool,
+    duplicate_slug: bool,
+
+    pub fn hasErrors(self: PostErrors) bool {
+        inline for (@typeInfo(PostErrors).@"struct".fields) |field| {
+            if (@field(self, field.name)) return true;
+        }
+        return false;
+    }
+};
+
 const SceneState = union(Scene) {
     listing: struct {
         posts: []Post,
     },
     editing: struct {
         post: Post,
+        post_errors: PostErrors,
         show_confirm_delete: bool,
     },
 };
@@ -161,13 +182,14 @@ pub const GuiState = union(enum) {
         const scene: SceneState = switch (current_scene) {
             .listing => blk: {
                 var posts = std.ArrayList(Post).init(arena);
-                var rows = try sql.rows(conn, "select id, title, content from post order by id desc", .{});
+                var rows = try sql.rows(conn, "select id, title, slug, content from post order by id desc", .{});
                 defer rows.deinit();
                 while (rows.next()) |row| {
                     const post = Post{
                         .id = row.int(0),
                         .title = try arena.dupe(u8, row.text(1)),
-                        .content = try arena.dupe(u8, row.text(2)),
+                        .slug = try arena.dupe(u8, row.text(2)),
+                        .content = try arena.dupe(u8, row.text(3)),
                     };
                     try posts.append(post);
                 }
@@ -178,11 +200,28 @@ pub const GuiState = union(enum) {
 
             .editing => blk: {
                 var row = (try sql.selectRow(conn,
-                    \\select p.id, p.title, p.content
+                    \\select p.id, p.title, p.slug, p.content
                     \\from post p
                     \\inner join gui_scene_editing e on e.post_id = p.id
                 , .{})).?;
                 defer row.deinit();
+
+                const post = Post{
+                    .id = row.int(0),
+                    .title = try arena.dupe(u8, row.text(1)),
+                    .slug = try arena.dupe(u8, row.text(2)),
+                    .content = try arena.dupe(u8, row.text(3)),
+                };
+
+                var err_row = (try sql.selectRow(conn,
+                    \\select
+                    \\  empty_title,
+                    \\  empty_slug,
+                    \\  empty_content,
+                    \\  duplicate_slug
+                    \\from gui_current_post_err
+                , .{})).?;
+                defer err_row.deinit();
 
                 const show_confirm_delete = (try sql.selectInt(
                     conn,
@@ -194,10 +233,12 @@ pub const GuiState = union(enum) {
 
                 break :blk .{
                     .editing = .{
-                        .post = Post{
-                            .id = row.int(0),
-                            .title = try arena.dupe(u8, row.text(1)),
-                            .content = try arena.dupe(u8, row.text(2)),
+                        .post = post,
+                        .post_errors = .{
+                            .empty_title = err_row.boolean(0),
+                            .empty_slug = err_row.boolean(1),
+                            .empty_content = err_row.boolean(2),
+                            .duplicate_slug = err_row.boolean(3),
                         },
                         .show_confirm_delete = show_confirm_delete,
                     },

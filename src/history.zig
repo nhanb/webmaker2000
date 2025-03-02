@@ -14,6 +14,7 @@ pub fn shouldSkip(action: core.ActionEnum) bool {
     return switch (action) {
         .create_post => false,
         .update_post_title => false,
+        .update_post_slug => false,
         .update_post_content => false,
         .edit_post => false,
         .list_posts => false,
@@ -229,6 +230,7 @@ pub fn undo(
     const status_text = switch (barriers[0].action) {
         .create_post => "Undo: Create post.",
         .update_post_title => "Undo: Update post title.",
+        .update_post_slug => "Undo: Update post slug.",
         .update_post_content => "Undo: Update post content.",
         .edit_post => "Undo: View post.",
         .list_posts => "Undo: View posts list.",
@@ -275,6 +277,7 @@ fn debounceIfNeeded(action: core.ActionEnum, conn: zqlite.Conn) !bool {
     const is_debounceable = switch (action) {
         .create_post => false,
         .update_post_title => true,
+        .update_post_slug => true,
         .update_post_content => true,
         .edit_post => false,
         .list_posts => false,
@@ -380,6 +383,7 @@ pub fn redo(
     const status_text = switch (barriers[0].action) {
         .create_post => "Redo: Create post.",
         .update_post_title => "Redo: Update post title.",
+        .update_post_slug => "Redo: Update post slug.",
         .update_post_content => "Redo: Update post content.",
         .edit_post => "Redo: View post.",
         .list_posts => "Redo: View posts list.",
