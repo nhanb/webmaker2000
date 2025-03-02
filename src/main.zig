@@ -303,7 +303,7 @@ fn gui_frame(
 
             var frame = try dvui.box(@src(), .vertical, .{
                 .expand = .both,
-                .background = true,
+                .background = false,
             });
             defer frame.deinit();
 
@@ -393,9 +393,9 @@ fn gui_frame(
                             },
                             //.padding = .{ .x = 5 },
                             .margin = .all(5),
-                            .corner_radius = .all(5),
+                            .corner_radius = .all(0),
                             .border = .all(1),
-                            //.color_border = .{ .color = .{ .r = 0x88, .g = 0x88, .b = 0x88 } },
+                            .color_fill = .{ .name = .fill_window },
                         });
                         defer scroll.deinit();
 
