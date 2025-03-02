@@ -318,27 +318,16 @@ fn gui_frame(
                 );
                 defer toolbar.deinit();
 
-                if (try theme.button(
-                    @src(),
-                    "Undo",
-                    .{},
-                    if (undos.len == 0) theme.disabled_btn else .{},
-                )) {
+                if (try theme.button(@src(), "Undo", .{}, .{}, undos.len == 0)) {
                     try history.undo(conn, undos);
                 }
 
-                if (try theme.button(
-                    @src(),
-                    "Redo",
-                    .{},
-                    if (redos.len == 0) theme.disabled_btn else .{},
-                )) {
+                if (try theme.button(@src(), "Redo", .{}, .{}, redos.len == 0)) {
                     try history.redo(conn, redos);
                 }
 
                 const generate_disabled = state.scene == .editing and state.scene.editing.post_errors.hasErrors();
-                const generate_opts: dvui.Options = if (generate_disabled) theme.disabled_btn else .{};
-                if (try theme.button(@src(), "Generate", .{}, generate_opts) and !generate_disabled) {
+                if (try theme.button(@src(), "Generate", .{}, .{}, generate_disabled)) {
                     var timer = try std.time.Timer.start();
 
                     const output_path = db.output_path();
@@ -379,7 +368,7 @@ fn gui_frame(
                 .listing => |scene| {
                     try dvui.label(@src(), "Posts", .{}, .{ .font_style = .title_1 });
 
-                    if (try theme.button(@src(), "New post", .{}, .{})) {
+                    if (try theme.button(@src(), "New post", .{}, .{}, false)) {
                         try core.handleAction(conn, arena, .create_post);
                     }
 
@@ -402,7 +391,7 @@ fn gui_frame(
                             var hbox = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
                             defer hbox.deinit();
 
-                            if (try theme.button(@src(), "Edit", .{}, .{})) {
+                            if (try theme.button(@src(), "Edit", .{}, .{}, false)) {
                                 try core.handleAction(conn, arena, .{ .edit_post = post.id });
                             }
 
@@ -422,6 +411,8 @@ fn gui_frame(
                 },
 
                 .editing => |scene| {
+                    const post_errors = scene.post_errors;
+
                     var vbox = try dvui.box(
                         @src(),
                         .vertical,
@@ -436,7 +427,7 @@ fn gui_frame(
                     var content_buf: []u8 = scene.post.content;
 
                     try dvui.label(@src(), "Title:", .{}, .{});
-                    var title_entry = try dvui.textEntry(
+                    var title_entry = try theme.textEntry(
                         @src(),
                         .{
                             .text = .{
@@ -446,10 +437,8 @@ fn gui_frame(
                                 },
                             },
                         },
-                        if (scene.post_errors.empty_title)
-                            theme.invalid_text_entry
-                        else
-                            .{ .expand = .horizontal },
+                        .{ .expand = .horizontal },
+                        post_errors.empty_title,
                     );
                     if (title_entry.text_changed) {
                         try core.handleAction(conn, arena, .{
@@ -462,7 +451,7 @@ fn gui_frame(
                     title_entry.deinit();
 
                     try dvui.label(@src(), "Slug:", .{}, .{});
-                    var slug_entry = try dvui.textEntry(
+                    var slug_entry = try theme.textEntry(
                         @src(),
                         .{
                             .text = .{
@@ -472,10 +461,8 @@ fn gui_frame(
                                 },
                             },
                         },
-                        if (scene.post_errors.empty_slug or scene.post_errors.duplicate_slug)
-                            theme.invalid_text_entry
-                        else
-                            .{ .expand = .horizontal },
+                        .{ .expand = .horizontal },
+                        post_errors.empty_slug or post_errors.duplicate_slug,
                     );
                     if (slug_entry.text_changed) {
                         try core.handleAction(conn, arena, .{
@@ -488,7 +475,7 @@ fn gui_frame(
                     slug_entry.deinit();
 
                     try dvui.label(@src(), "Content:", .{}, .{});
-                    var content_entry = try dvui.textEntry(
+                    var content_entry = try theme.textEntry(
                         @src(),
                         .{
                             .multiline = true,
@@ -501,11 +488,11 @@ fn gui_frame(
                                 },
                             },
                         },
-                        // TODO: Oops
                         .{
                             .expand = .both,
                             .min_size_content = .{ .h = 80 },
                         },
+                        post_errors.empty_content,
                     );
                     if (content_entry.text_changed) {
                         try core.handleAction(conn, arena, .{
@@ -524,13 +511,12 @@ fn gui_frame(
                         // Only show "Back" button if post is not empty
                         // TODO there might be a more elegant way to implement "discard
                         // newly created post if empty".
-                        if ((scene.post.title.len > 0 or scene.post.content.len > 0) and
-                            try theme.button(@src(), "Back", .{}, .{}))
-                        {
+                        const back_disabled = post_errors.hasErrors();
+                        if (try theme.button(@src(), "Back", .{}, .{}, back_disabled)) {
                             try core.handleAction(conn, arena, .list_posts);
                         }
 
-                        if (try theme.button(@src(), "Delete", .{}, .{})) {
+                        if (try theme.button(@src(), "Delete", .{}, .{}, false)) {
                             try core.handleAction(conn, arena, .{ .delete_post = scene.post.id });
                         }
 
@@ -557,11 +543,11 @@ fn gui_frame(
                             var hbox = try dvui.box(@src(), .horizontal, .{ .gravity_x = 1.0 });
                             defer hbox.deinit();
 
-                            if (try theme.button(@src(), "Yes", .{}, .{})) {
+                            if (try theme.button(@src(), "Yes", .{}, .{}, false)) {
                                 try core.handleAction(conn, arena, .{ .delete_post_yes = scene.post.id });
                             }
 
-                            if (try theme.button(@src(), "No", .{}, .{})) {
+                            if (try theme.button(@src(), "No", .{}, .{}, false)) {
                                 try core.handleAction(conn, arena, .{ .delete_post_no = scene.post.id });
                             }
                         }

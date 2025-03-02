@@ -33,33 +33,41 @@ pub fn default() dvui.Theme {
     return theme;
 }
 
-pub const disabled_btn: dvui.Options = .{
-    .color_text = .{ .name = .fill_press },
-    .color_text_press = .{ .name = .fill_press },
-    .color_fill_hover = .{ .name = .fill_control },
-    .color_fill_press = .{ .name = .fill_control },
-    .color_accent = .{ .color = dvui.Color{ .a = 0x00 } },
-};
+/// Thin wrapper easily toggle text entry's invalid state.
+/// It adds the necessary styling.
+pub fn textEntry(
+    src: std.builtin.SourceLocation,
+    init_opts: dvui.TextEntryWidget.InitOptions,
+    opts: dvui.Options,
+    // TODO: maybe turn this bool into a list of errors for custom rendering?
+    invalid: bool,
+) !*dvui.TextEntryWidget {
+    if (!invalid) return dvui.textEntry(src, init_opts, opts);
 
-pub const invalid_text_entry: dvui.Options = .{
-    .color_fill = .{ .color = .{ .r = 0xff, .g = 0xeb, .b = 0xe9 } },
-    .color_accent = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } },
-    .color_border = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } },
+    var invalid_opts = opts;
+    invalid_opts.color_fill = .{ .color = .{ .r = 0xff, .g = 0xeb, .b = 0xe9 } };
+    invalid_opts.color_accent = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } };
+    invalid_opts.color_border = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } };
+    return try dvui.textEntry(src, init_opts, invalid_opts);
+}
 
-    // TODO: I don't know how to "merge" 2 option structs in a function call
-    // yet, so I have to list regular non-disabled options here too.
-    .expand = .horizontal,
-};
-
-// AFAIK there's no way to set a "default font size for buttons only".
-// For such granularity, we need to override the opts param instead:
+/// Thin wrapper easily toggle button's disabled state.
+/// It adds the necessary styling, and always returns false when disabled.
 pub fn button(
     src: std.builtin.SourceLocation,
     label_str: []const u8,
     init_opts: dvui.ButtonWidget.InitOptions,
     opts: dvui.Options,
+    disabled: bool,
 ) !bool {
-    //var final_opts = opts;
-    //final_opts.font = .{ .size = 18, .name = "Noto" };
-    return dvui.button(src, label_str, init_opts, opts);
+    if (!disabled) return dvui.button(src, label_str, init_opts, opts);
+
+    var disabled_opts = opts;
+    disabled_opts.color_text = .{ .name = .fill_press };
+    disabled_opts.color_text_press = .{ .name = .fill_press };
+    disabled_opts.color_fill_hover = .{ .name = .fill_control };
+    disabled_opts.color_fill_press = .{ .name = .fill_control };
+    disabled_opts.color_accent = .{ .color = dvui.Color{ .a = 0x00 } };
+    _ = try dvui.button(src, label_str, init_opts, disabled_opts);
+    return false;
 }
