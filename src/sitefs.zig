@@ -74,8 +74,8 @@ pub fn read(args: ReadArgs) !ReadResult {
         try children.append(try allocPrint(arena, "{s}index.html", .{prefix}));
 
         // a dir for each post
-        // TODO: right now it's id but it should be slug in the future.
-        var rows = try sql.rows(conn, "select id from post order by id", .{});
+        // TODO: is there a better way to handle dupes?
+        var rows = try sql.rows(conn, "select slug from post order by slug, id", .{});
         defer rows.deinit();
         while (rows.next()) |row| {
             const slug = try arena.dupe(u8, row.text(0));
@@ -96,7 +96,12 @@ pub fn read(args: ReadArgs) !ReadResult {
 
         var posts = std.ArrayList(html.Element).init(arena);
 
-        var rows = try sql.rows(conn, "select id, title from post order by id desc", .{});
+        var rows = try sql.rows(conn,
+            \\select slug, title
+            \\from post
+            \\where slug <> '' and title <> ''
+            \\order by slug, id desc
+        , .{});
         defer rows.deinit();
         while (rows.next()) |row| {
             const slug = try arena.dupe(u8, row.text(0));
@@ -136,7 +141,7 @@ pub fn read(args: ReadArgs) !ReadResult {
 
     const maybe_row = try sql.selectRow(
         conn,
-        "select title, content from post where id=?",
+        "select title, content from post where slug=?",
         .{post_slug},
     );
     var row = if (maybe_row) |r| r else return .not_found;

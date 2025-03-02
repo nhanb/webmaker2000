@@ -354,9 +354,12 @@ fn gui_frame(
 
                 const url = switch (state.scene) {
                     .listing => try allocPrint(arena, "http://localhost:{d}", .{PORT}),
-                    .editing => |s| try allocPrint(arena, "http://localhost:{d}/{d}", .{ PORT, s.post.id }),
+                    .editing => |s| if (s.post_errors.hasErrors())
+                        ""
+                    else
+                        try allocPrint(arena, "http://localhost:{d}/{s}", .{ PORT, s.post.slug }),
                 };
-                if (try dvui.labelClick(@src(), "{s}", .{url}, .{
+                if (url.len > 0 and try dvui.labelClick(@src(), "{s}", .{url}, .{
                     .gravity_x = 1.0,
                     .color_text = .{ .color = .{ .r = 0x00, .g = 0x00, .b = 0xff } },
                 })) {
