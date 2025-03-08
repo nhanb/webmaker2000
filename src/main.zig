@@ -453,6 +453,15 @@ fn gui_frame(
                     }
                     title_entry.deinit();
 
+                    if (post_errors.empty_title) {
+                        try dvui.label(
+                            @src(),
+                            "Title must not be empty.",
+                            .{},
+                            .{ .color_text = .{ .name = .err } },
+                        );
+                    }
+
                     try dvui.label(@src(), "Slug:", .{}, .{});
                     var slug_entry = try theme.textEntry(
                         @src(),
@@ -476,6 +485,24 @@ fn gui_frame(
                         });
                     }
                     slug_entry.deinit();
+
+                    if (post_errors.empty_slug) {
+                        try dvui.label(
+                            @src(),
+                            "Slug must not be empty.",
+                            .{},
+                            .{ .color_text = .{ .name = .err } },
+                        );
+                    }
+
+                    if (post_errors.duplicate_slug) {
+                        try dvui.label(
+                            @src(),
+                            "Slug must be unique.",
+                            .{},
+                            .{ .color_text = .{ .name = .err } },
+                        );
+                    }
 
                     try dvui.label(@src(), "Content:", .{}, .{});
                     var content_entry = try theme.textEntry(
@@ -507,13 +534,19 @@ fn gui_frame(
                     }
                     content_entry.deinit();
 
+                    if (post_errors.empty_content) {
+                        try dvui.label(
+                            @src(),
+                            "Content must not be empty.",
+                            .{},
+                            .{ .color_text = .{ .name = .err } },
+                        );
+                    }
+
                     {
                         var hbox = try dvui.box(@src(), .horizontal, .{ .expand = .horizontal });
                         defer hbox.deinit();
 
-                        // Only show "Back" button if post is not empty
-                        // TODO there might be a more elegant way to implement "discard
-                        // newly created post if empty".
                         const back_disabled = post_errors.hasErrors();
                         if (try theme.button(@src(), "Back", .{}, .{}, back_disabled)) {
                             try core.handleAction(conn, arena, .list_posts);
