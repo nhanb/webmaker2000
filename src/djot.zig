@@ -1,15 +1,15 @@
 const std = @import("std");
 const print = std.debug.print;
-const ziglua = @import("ziglua");
+const lua_wrapper = @import("lua_wrapper");
 const djot_lua = @embedFile("djot.lua");
 
-var lua: *ziglua.Lua = undefined;
+var lua: *lua_wrapper.Lua = undefined;
 var lua_mut = std.Thread.Mutex{};
 
 /// Initialize the lua VM and load the necessary djot.lua library code.
 /// Remember to call deinit() when you're all done.
 pub fn init(gpa: std.mem.Allocator) !void {
-    lua = try ziglua.Lua.init(gpa);
+    lua = try lua_wrapper.Lua.init(gpa);
 
     // load lua standard libraries
     lua.openLibs();

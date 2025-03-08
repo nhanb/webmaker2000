@@ -39,7 +39,7 @@ MVP checklist:
   [emacs' undo style][emacs], which avoids accidentally losing data.
 - [ ] Asset upload
 - [ ] User-configurable deploy command (e.g. shelling out to rclone)
-- [ ] Preview server
+- [x] Preview server
 - [ ] User-customizable template system
 - [ ] RSS/Atom feed
 - [ ] OpenGraph tags
@@ -48,7 +48,7 @@ MVP checklist:
 
 Dependencies:
 
-- Build time: zig master (0.14.0-dev.3271+bd237bced as of this writing)
+- Build time: zig 0.14.0
 - Runtime: libc
 
 Statically compiled deps that can optionally be linked dynamically:

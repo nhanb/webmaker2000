@@ -1,18 +1,19 @@
 .{
-    .name = "dvui-demo",
+    .name = .webmaker2000,
     .version = "0.0.1",
+    .fingerprint = 0xbbb760496aeb26ae,
     .dependencies = .{
         .dvui = .{
-            .url = "git+https://github.com/david-vanderson/dvui?ref=main#c86951f13f79b1d257e126594a11d0cfcebeefd5",
-            .hash = "1220dc2ab346994c6331278cd61868f7cd417c5050164d52bd3358a36ac8d5c9b53c",
+            .url = "git+https://github.com/david-vanderson/dvui?ref=main#5e30428fb546a81c0aef8f236578650eecce3852",
+            .hash = "dvui-0.2.0-AQFJmbFoygBQC9OGkf4FyvXlzmvryQ1_WPrerHJwRpBd",
         },
         .zqlite = .{
-            .url = "git+https://github.com/karlseguin/zqlite.zig?ref=master#61568e7d59ac7d05ce8e32c287b26bfbab0126a6",
-            .hash = "122003755f1656fff4295cbee88fbc70407650fa815187f621bedbdf6fd0a1da83e6",
+            .url = "git+https://github.com/karlseguin/zqlite.zig?ref=master#d146898482a4c4bdcba487496f67a24afa12894d",
+            .hash = "zqlite-0.0.0-RWLaYxp7lQBh-o0STqzS1uZZb0tLTCGBDgzpG_dGjd2J",
         },
-        .ziglua = .{
-            .url = "git+https://github.com/natecraddock/ziglua?ref=main#00a3c39c587b1b853748c05b5f5c1dc68f5f3683",
-            .hash = "1220ee6d36df8c7847234ff5212eb7fc857d284b0d2eccb47cb9ba04ce089d4d1472",
+        .lua_wrapper = .{
+            .url = "git+https://github.com/natecraddock/ziglua?ref=main#7bfb3c2b87220cdc89ef01cc99a200dad7a28e50",
+            .hash = "lua_wrapper-0.1.0-OyMC27fOBAAU3E2ueB-EWGSgsuCFQZL83pT0nQJ1ufOI",
         },
     },
     .paths = .{""},

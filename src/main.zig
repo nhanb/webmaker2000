@@ -20,10 +20,10 @@ const Modal = core_.Modal;
 const Core = core_.Core;
 const sitefs = @import("sitefs.zig");
 
-comptime {
-    std.debug.assert(dvui.backend_kind == .sdl);
-}
 const Backend = dvui.backend;
+comptime {
+    std.debug.assert(@hasDecl(Backend, "SDLBackend"));
+}
 
 var maybe_server: ?server.Server = null;
 
