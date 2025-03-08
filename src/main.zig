@@ -47,7 +47,7 @@ pub fn main() !void {
     var backend = try Backend.initWindow(.{
         .allocator = gpa,
         .size = .{ .w = 800.0, .h = 600.0 },
-        .min_size = .{ .w = 500.0, .h = 350.0 },
+        .min_size = .{ .w = 500, .h = 500 },
         .vsync = true,
         .title = "WebMaker2000",
         .icon = @embedFile("favicon.png"),
@@ -429,7 +429,14 @@ fn gui_frame(
                     var slug_buf: []u8 = scene.post.slug;
                     var content_buf: []u8 = scene.post.content;
 
-                    try dvui.label(@src(), "Title:", .{}, .{});
+                    try dvui.label(@src(), "Title:", .{}, .{
+                        .padding = .{
+                            .x = 5,
+                            .y = 5,
+                            .w = 5,
+                            .h = 0, // bottom
+                        },
+                    });
                     var title_entry = try theme.textEntry(
                         @src(),
                         .{
@@ -453,16 +460,21 @@ fn gui_frame(
                     }
                     title_entry.deinit();
 
-                    if (post_errors.empty_title) {
-                        try dvui.label(
-                            @src(),
-                            "Title must not be empty.",
-                            .{},
-                            .{ .color_text = .{ .name = .err } },
-                        );
-                    }
+                    try theme.errLabel(@src(), "{s}", .{
+                        if (post_errors.empty_title)
+                            "Title must not be empty."
+                        else
+                            "",
+                    });
 
-                    try dvui.label(@src(), "Slug:", .{}, .{});
+                    try dvui.label(@src(), "Slug:", .{}, .{
+                        .padding = .{
+                            .x = 5,
+                            .y = 5,
+                            .w = 5,
+                            .h = 0, // bottom
+                        },
+                    });
                     var slug_entry = try theme.textEntry(
                         @src(),
                         .{
@@ -486,25 +498,25 @@ fn gui_frame(
                     }
                     slug_entry.deinit();
 
-                    if (post_errors.empty_slug) {
-                        try dvui.label(
-                            @src(),
-                            "Slug must not be empty.",
-                            .{},
-                            .{ .color_text = .{ .name = .err } },
-                        );
-                    }
+                    try theme.errLabel(@src(), "{s}{s}", .{
+                        if (post_errors.empty_slug)
+                            "Slug must not be empty. "
+                        else
+                            "",
+                        if (post_errors.duplicate_slug)
+                            "Slug must be unique. "
+                        else
+                            "",
+                    });
 
-                    if (post_errors.duplicate_slug) {
-                        try dvui.label(
-                            @src(),
-                            "Slug must be unique.",
-                            .{},
-                            .{ .color_text = .{ .name = .err } },
-                        );
-                    }
-
-                    try dvui.label(@src(), "Content:", .{}, .{});
+                    try dvui.label(@src(), "Content:", .{}, .{
+                        .padding = .{
+                            .x = 5,
+                            .y = 5,
+                            .w = 5,
+                            .h = 0, // bottom
+                        },
+                    });
                     var content_entry = try theme.textEntry(
                         @src(),
                         .{
@@ -534,17 +546,19 @@ fn gui_frame(
                     }
                     content_entry.deinit();
 
-                    if (post_errors.empty_content) {
-                        try dvui.label(
-                            @src(),
-                            "Content must not be empty.",
-                            .{},
-                            .{ .color_text = .{ .name = .err } },
-                        );
-                    }
+                    try theme.errLabel(@src(), "{s}", .{
+                        if (post_errors.empty_content)
+                            "Content must not be empty."
+                        else
+                            "",
+                    });
 
                     {
-                        var hbox = try dvui.box(@src(), .horizontal, .{ .expand = .horizontal });
+                        var hbox = try dvui.box(@src(), .horizontal, .{
+                            .expand = .horizontal,
+                            .gravity_y = 1,
+                            .margin = .{ .y = 10 },
+                        });
                         defer hbox.deinit();
 
                         const back_disabled = post_errors.hasErrors();

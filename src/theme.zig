@@ -7,8 +7,8 @@ pub fn default() dvui.Theme {
 
     theme.font_body = .{ .size = 20, .name = "Noto" };
     theme.font_heading = .{ .size = 20, .name = "NotoBd" };
-    theme.font_caption = .{ .size = 14, .name = "Noto", .line_height_factor = 1.1 };
-    theme.font_caption_heading = .{ .size = 14, .name = "NotoBd", .line_height_factor = 1.1 };
+    theme.font_caption = .{ .size = 16, .name = "Noto", .line_height_factor = 1.1 };
+    theme.font_caption_heading = .{ .size = 16, .name = "NotoBd", .line_height_factor = 1.1 };
     theme.font_title = .{ .size = 30, .name = "Noto" };
     theme.font_title_1 = .{ .size = 28, .name = "NotoBd" };
     theme.font_title_2 = .{ .size = 26, .name = "NotoBd" };
@@ -70,4 +70,17 @@ pub fn button(
     disabled_opts.color_accent = .{ .color = dvui.Color{ .a = 0x00 } };
     _ = try dvui.button(src, label_str, init_opts, disabled_opts);
     return false;
+}
+
+pub fn errLabel(src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) !void {
+    return dvui.label(src, fmt, args, .{
+        .color_text = .{ .name = .err },
+        .font_style = .caption,
+        .padding = .{
+            .x = 5,
+            .y = 0, // top
+            .h = 5,
+            .w = 5,
+        },
+    });
 }
