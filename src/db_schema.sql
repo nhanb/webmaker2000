@@ -8,6 +8,20 @@ create table post (
     content text not null default ''
 );
 
+create table attachment (
+    id integer primary key,
+    post_id integer not null,
+    name text not null,
+    data blob not null,
+    foreign key (post_id) references post (id) on delete cascade,
+    unique(post_id, name)
+);
+
+create table gui_attachment_selected (
+    attachment_id integer primary key,
+    foreign key (attachment_id) references attachment (id) on delete cascade
+);
+
 create table gui_scene (
     id integer primary key check (id = 0) default 0,
     current_scene integer default 0

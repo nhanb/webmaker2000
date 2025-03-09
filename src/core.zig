@@ -85,6 +85,49 @@ pub const Core = struct {
                     .{@intFromEnum(Modal.confirm_post_deletion)},
                 ));
             },
+            .add_attachments => |payload| {
+                for (payload.file_paths) |path| {
+                    const file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
+                    const data = try file.readToEndAlloc(arena, 1024 * 1024 * 1024);
+                    try sql.exec(
+                        conn,
+                        \\insert into attachment (post_id, name, data) values (?,?,?)
+                        \\on conflict (post_id, name) do update set data=?
+                    ,
+                        .{
+                            payload.post_id,
+                            std.fs.path.basename(path),
+                            zqlite.blob(data),
+                            zqlite.blob(data),
+                        },
+                    );
+                }
+            },
+            .delete_selected_attachments => |post_id| {
+                try sql.exec(
+                    conn,
+                    \\delete from attachment
+                    \\where post_id = ?
+                    \\  and id in (select attachment_id from gui_attachment_selected)
+                ,
+                    .{post_id},
+                );
+                try queries.setStatusText(arena, conn, "Deleted selected attachment(s).", .{});
+            },
+            .select_attachment => |id| {
+                try sql.exec(
+                    conn,
+                    "insert into gui_attachment_selected (attachment_id) values (?)",
+                    .{id},
+                );
+            },
+            .deselect_attachment => |id| {
+                try sql.exec(
+                    conn,
+                    "delete from gui_attachment_selected where attachment_id=?",
+                    .{id},
+                );
+            },
         }
 
         if (!skip_history) {
@@ -98,13 +141,17 @@ pub const Core = struct {
 pub const ActionEnum = enum(i64) {
     create_post = 0,
     update_post_title = 1,
-    update_post_slug = 8,
-    update_post_content = 2,
-    edit_post = 3,
-    list_posts = 4,
-    delete_post = 5,
-    delete_post_yes = 6,
-    delete_post_no = 7,
+    update_post_slug = 2,
+    update_post_content = 3,
+    edit_post = 4,
+    list_posts = 5,
+    delete_post = 6,
+    delete_post_yes = 7,
+    delete_post_no = 8,
+    add_attachments = 9,
+    delete_selected_attachments = 10,
+    select_attachment = 11,
+    deselect_attachment = 12,
 };
 
 pub const Action = union(ActionEnum) {
@@ -117,6 +164,10 @@ pub const Action = union(ActionEnum) {
     delete_post: i64,
     delete_post_yes: i64,
     delete_post_no: i64,
+    add_attachments: struct { post_id: i64, file_paths: []const []const u8 },
+    delete_selected_attachments: i64,
+    select_attachment: i64,
+    deselect_attachment: i64,
 };
 
 const Post = struct {
@@ -145,6 +196,12 @@ pub const PostErrors = struct {
     }
 };
 
+const Attachment = struct {
+    id: i64,
+    name: []const u8,
+    selected: bool,
+};
+
 const SceneState = union(Scene) {
     listing: struct {
         posts: []Post,
@@ -153,6 +210,7 @@ const SceneState = union(Scene) {
         post: Post,
         post_errors: PostErrors,
         show_confirm_delete: bool,
+        attachments: []Attachment,
     },
 };
 
@@ -231,6 +289,25 @@ pub const GuiState = union(enum) {
                     ),
                 ) == 1);
 
+                var attachment_rows = try sql.rows(
+                    conn,
+                    \\select a.id, a.name, s.attachment_id is not null
+                    \\from attachment a
+                    \\  left outer join gui_attachment_selected s on s.attachment_id = a.id
+                    \\where post_id = ?
+                ,
+                    .{post.id},
+                );
+                var attachments: std.ArrayList(Attachment) = .init(arena);
+                while (attachment_rows.next()) |arow| {
+                    try attachments.append(Attachment{
+                        .id = arow.int(0),
+                        .name = try arena.dupe(u8, arow.text(1)),
+                        .selected = arow.boolean(2),
+                    });
+                }
+                try sql.check(attachment_rows.err, conn);
+
                 break :blk .{
                     .editing = .{
                         .post = post,
@@ -241,6 +318,7 @@ pub const GuiState = union(enum) {
                             .duplicate_slug = err_row.boolean(3),
                         },
                         .show_confirm_delete = show_confirm_delete,
+                        .attachments = attachments.items,
                     },
                 };
             },

@@ -21,6 +21,10 @@ pub fn shouldSkip(action: core.ActionEnum) bool {
         .delete_post => true,
         .delete_post_yes => false,
         .delete_post_no => true,
+        .add_attachments => false,
+        .delete_selected_attachments => false,
+        .select_attachment => false,
+        .deselect_attachment => false,
     };
 }
 
@@ -237,6 +241,10 @@ pub fn undo(
         .delete_post => unreachable,
         .delete_post_yes => "Undo: Delete post.",
         .delete_post_no => unreachable,
+        .add_attachments => "Undo: Add attachments.",
+        .delete_selected_attachments => "Undo: Delete attachments.",
+        .select_attachment => "Undo: Select attachment.",
+        .deselect_attachment => "Undo: Deselect attachment.",
     };
     try queries.setStatusTextNoAlloc(conn, status_text);
 }
@@ -284,6 +292,10 @@ fn debounceIfNeeded(action: core.ActionEnum, conn: zqlite.Conn) !bool {
         .delete_post => unreachable,
         .delete_post_yes => false,
         .delete_post_no => unreachable,
+        .add_attachments => false,
+        .delete_selected_attachments => false,
+        .select_attachment => false,
+        .deselect_attachment => false,
     };
     if (!is_debounceable) return false;
 
@@ -390,6 +402,10 @@ pub fn redo(
         .delete_post => unreachable,
         .delete_post_yes => "Redo: Delete post.",
         .delete_post_no => unreachable,
+        .add_attachments => "Redo: Add attachments.",
+        .delete_selected_attachments => "Redo: Delete attachments.",
+        .select_attachment => "Redo: Select attachment.",
+        .deselect_attachment => "Redo: Deselect attachment.",
     };
     try queries.setStatusTextNoAlloc(conn, status_text);
 }

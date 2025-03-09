@@ -509,49 +509,122 @@ fn gui_frame(
                             "",
                     });
 
-                    try dvui.label(@src(), "Content:", .{}, .{
-                        .padding = .{
-                            .x = 5,
-                            .y = 5,
-                            .w = 5,
-                            .h = 0, // bottom
-                        },
-                    });
-                    var content_entry = try theme.textEntry(
-                        @src(),
-                        .{
-                            .multiline = true,
-                            .break_lines = true,
-                            .scroll_horizontal = false,
-                            .text = .{
-                                .buffer_dynamic = .{
-                                    .backing = &content_buf,
-                                    .allocator = arena,
-                                },
+                    {
+                        var paned = try dvui.paned(
+                            @src(),
+                            .{ .direction = .horizontal, .collapsed_size = 0 },
+                            .{
+                                .expand = .both,
+                                .background = false,
+                                .min_size_content = .{ .h = 100 },
                             },
-                        },
-                        .{
-                            .expand = .both,
-                            .min_size_content = .{ .h = 80 },
-                        },
-                        post_errors.empty_content,
-                    );
-                    if (content_entry.text_changed) {
-                        try core.handleAction(conn, arena, .{
-                            .update_post_content = .{
-                                .id = scene.post.id,
-                                .content = content_entry.getText(),
-                            },
-                        });
-                    }
-                    content_entry.deinit();
+                        );
+                        defer paned.deinit();
 
-                    try theme.errLabel(@src(), "{s}", .{
-                        if (post_errors.empty_content)
-                            "Content must not be empty."
-                        else
-                            "",
-                    });
+                        {
+                            var content_vbox = try dvui.box(@src(), .vertical, .{ .expand = .both });
+                            defer content_vbox.deinit();
+
+                            try dvui.label(@src(), "Content:", .{}, .{
+                                .padding = .{
+                                    .x = 5,
+                                    .y = 5,
+                                    .w = 5,
+                                    .h = 0, // bottom
+                                },
+                            });
+                            var content_entry = try theme.textEntry(
+                                @src(),
+                                .{
+                                    .multiline = true,
+                                    .break_lines = true,
+                                    .scroll_horizontal = false,
+                                    .text = .{
+                                        .buffer_dynamic = .{
+                                            .backing = &content_buf,
+                                            .allocator = arena,
+                                        },
+                                    },
+                                },
+                                .{
+                                    .expand = .both,
+                                    .min_size_content = .{ .h = 80 },
+                                },
+                                post_errors.empty_content,
+                            );
+                            if (content_entry.text_changed) {
+                                try core.handleAction(conn, arena, .{
+                                    .update_post_content = .{
+                                        .id = scene.post.id,
+                                        .content = content_entry.getText(),
+                                    },
+                                });
+                            }
+                            content_entry.deinit();
+
+                            try theme.errLabel(@src(), "{s}", .{
+                                if (post_errors.empty_content)
+                                    "Content must not be empty."
+                                else
+                                    "",
+                            });
+                        }
+
+                        {
+                            var attachments_vbox = try dvui.box(@src(), .vertical, .{ .expand = .both });
+                            defer attachments_vbox.deinit();
+
+                            try dvui.label(@src(), "Attachments:", .{}, .{});
+
+                            {
+                                var buttons_box = try dvui.box(@src(), .horizontal, .{});
+                                defer buttons_box.deinit();
+
+                                if (try theme.button(@src(), "Add...", .{}, .{}, false)) {
+                                    if (try dvui.dialogNativeFileOpenMultiple(arena, .{
+                                        .title = "Add attachments",
+                                    })) |file_paths| {
+                                        try core.handleAction(conn, arena, .{ .add_attachments = .{
+                                            .post_id = scene.post.id,
+                                            .file_paths = file_paths,
+                                        } });
+                                    }
+                                }
+
+                                var delete_disabled = true;
+                                for (scene.attachments) |attachment| {
+                                    if (attachment.selected) {
+                                        delete_disabled = false;
+                                        break;
+                                    }
+                                }
+                                if (try theme.button(@src(), "Delete selected", .{}, .{}, delete_disabled)) {
+                                    try core.handleAction(conn, arena, .{ .delete_selected_attachments = scene.post.id });
+                                }
+                            }
+
+                            var selected_bools = try std.ArrayList(bool).initCapacity(arena, scene.attachments.len);
+                            for (scene.attachments, 0..) |attachment, i| {
+                                try selected_bools.append(attachment.selected);
+
+                                var atm_group = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
+                                defer atm_group.deinit();
+
+                                if (try dvui.checkbox(
+                                    @src(),
+                                    &selected_bools.items[i],
+                                    attachment.name,
+                                    .{ .id_extra = i },
+                                )) {
+                                    if (selected_bools.items[i]) {
+                                        try core.handleAction(conn, arena, .{ .select_attachment = attachment.id });
+                                    } else {
+                                        try core.handleAction(conn, arena, .{ .deselect_attachment = attachment.id });
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     {
                         var hbox = try dvui.box(@src(), .horizontal, .{
