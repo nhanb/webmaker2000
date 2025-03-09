@@ -348,9 +348,9 @@ fn gui_frame(
                     );
                 }
 
-                var buf: [100]u8 = undefined;
-                const fps_str = std.fmt.bufPrint(&buf, "{d:0>3.0} fps", .{dvui.FPS()}) catch unreachable;
-                try dvui.label(@src(), "{s}", .{fps_str}, .{ .gravity_x = 1 });
+                //var buf: [100]u8 = undefined;
+                //const fps_str = std.fmt.bufPrint(&buf, "{d:0>3.0} fps", .{dvui.FPS()}) catch unreachable;
+                //try dvui.label(@src(), "{s}", .{fps_str}, .{ .gravity_x = 1 });
 
                 const url = switch (state.scene) {
                     .listing => try allocPrint(arena, "http://localhost:{d}", .{PORT}),
@@ -602,24 +602,39 @@ fn gui_frame(
                                     try core.handleAction(conn, arena, .{ .delete_selected_attachments = scene.post.id });
                                 }
                             }
+                            {
+                                var scroll = try dvui.scrollArea(@src(), .{}, .{
+                                    .expand = .both,
+                                    .max_size_content = .{
+                                        // FIXME: how to avoid hardcoded max height?
+                                        .h = attachments_vbox.childRect.h - 100,
+                                    },
+                                    //.padding = .{ .x = 5 },
+                                    .margin = .all(5),
+                                    .corner_radius = .all(0),
+                                    .border = .all(1),
+                                    .color_fill = .{ .name = .fill_window },
+                                });
+                                defer scroll.deinit();
 
-                            var selected_bools = try std.ArrayList(bool).initCapacity(arena, scene.attachments.len);
-                            for (scene.attachments, 0..) |attachment, i| {
-                                try selected_bools.append(attachment.selected);
+                                var selected_bools = try std.ArrayList(bool).initCapacity(arena, scene.attachments.len);
+                                for (scene.attachments, 0..) |attachment, i| {
+                                    try selected_bools.append(attachment.selected);
 
-                                var atm_group = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
-                                defer atm_group.deinit();
+                                    var atm_group = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
+                                    defer atm_group.deinit();
 
-                                if (try dvui.checkbox(
-                                    @src(),
-                                    &selected_bools.items[i],
-                                    attachment.name,
-                                    .{ .id_extra = i },
-                                )) {
-                                    if (selected_bools.items[i]) {
-                                        try core.handleAction(conn, arena, .{ .select_attachment = attachment.id });
-                                    } else {
-                                        try core.handleAction(conn, arena, .{ .deselect_attachment = attachment.id });
+                                    if (try dvui.checkbox(
+                                        @src(),
+                                        &selected_bools.items[i],
+                                        attachment.name,
+                                        .{ .id_extra = i },
+                                    )) {
+                                        if (selected_bools.items[i]) {
+                                            try core.handleAction(conn, arena, .{ .select_attachment = attachment.id });
+                                        } else {
+                                            try core.handleAction(conn, arena, .{ .deselect_attachment = attachment.id });
+                                        }
                                     }
                                 }
                             }

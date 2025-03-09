@@ -37,7 +37,7 @@ MVP checklist:
 
 - [x] Persistent undo/redo: Basically adapted [sqlite's guide][undo] to
   [emacs' undo style][emacs], which avoids accidentally losing data.
-- [ ] Asset upload
+- [x] Asset upload
 - [ ] User-configurable deploy command (e.g. shelling out to rclone)
 - [x] Preview server
 - [ ] User-customizable template system
