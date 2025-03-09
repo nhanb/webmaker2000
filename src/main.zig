@@ -627,7 +627,7 @@ fn gui_frame(
                                     if (try dvui.checkbox(
                                         @src(),
                                         &selected_bools.items[i],
-                                        attachment.name,
+                                        try allocPrint(arena, "{s} ({s})", .{ attachment.name, attachment.size }),
                                         .{ .id_extra = i },
                                     )) {
                                         if (selected_bools.items[i]) {

@@ -102,6 +102,15 @@ pub const Core = struct {
                         },
                     );
                 }
+                try queries.setStatusText(
+                    arena,
+                    conn,
+                    "Added {d} attachment{s}.",
+                    .{
+                        payload.file_paths.len,
+                        if (payload.file_paths.len > 1) "s" else "",
+                    },
+                );
             },
             .delete_selected_attachments => |post_id| {
                 try sql.exec(
@@ -199,6 +208,7 @@ pub const PostErrors = struct {
 const Attachment = struct {
     id: i64,
     name: []const u8,
+    size: []const u8,
     selected: bool,
 };
 
@@ -291,19 +301,25 @@ pub const GuiState = union(enum) {
 
                 var attachment_rows = try sql.rows(
                     conn,
-                    \\select a.id, a.name, s.attachment_id is not null
+                    \\select a.id, a.name, s.attachment_id is not null, length(data) / 1024.0 as size_k
                     \\from attachment a
                     \\  left outer join gui_attachment_selected s on s.attachment_id = a.id
                     \\where post_id = ?
+                    \\order by id
                 ,
                     .{post.id},
                 );
                 var attachments: std.ArrayList(Attachment) = .init(arena);
                 while (attachment_rows.next()) |arow| {
+                    // TODO: need a proper bytes-to-K/M/G conversion helper
+                    const size_k = arow.float(3);
+                    const size = try std.fmt.allocPrint(arena, "{d:.2}KiB", .{size_k});
+
                     try attachments.append(Attachment{
                         .id = arow.int(0),
                         .name = try arena.dupe(u8, arow.text(1)),
                         .selected = arow.boolean(2),
+                        .size = size,
                     });
                 }
                 try sql.check(attachment_rows.err, conn);
