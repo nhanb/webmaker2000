@@ -34,6 +34,8 @@ const HISTORY_TABLES = &.{
     "gui_scene_editing",
     "gui_modal",
     "gui_status_text",
+    "attachment",
+    "gui_attachment_selected",
 };
 
 const HistoryType = struct {

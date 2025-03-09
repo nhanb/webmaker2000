@@ -117,7 +117,7 @@ pub const Core = struct {
                     conn,
                     \\delete from attachment
                     \\where post_id = ?
-                    \\  and id in (select attachment_id from gui_attachment_selected)
+                    \\  and id in (select id from gui_attachment_selected)
                 ,
                     .{post_id},
                 );
@@ -126,14 +126,14 @@ pub const Core = struct {
             .select_attachment => |id| {
                 try sql.exec(
                     conn,
-                    "insert into gui_attachment_selected (attachment_id) values (?)",
+                    "insert into gui_attachment_selected (id) values (?)",
                     .{id},
                 );
             },
             .deselect_attachment => |id| {
                 try sql.exec(
                     conn,
-                    "delete from gui_attachment_selected where attachment_id=?",
+                    "delete from gui_attachment_selected where id=?",
                     .{id},
                 );
             },
@@ -301,11 +301,11 @@ pub const GuiState = union(enum) {
 
                 var attachment_rows = try sql.rows(
                     conn,
-                    \\select a.id, a.name, s.attachment_id is not null, length(data) / 1024.0 as size_k
+                    \\select a.id, a.name, s.id is not null, length(data) / 1024.0 as size_k
                     \\from attachment a
-                    \\  left outer join gui_attachment_selected s on s.attachment_id = a.id
+                    \\  left outer join gui_attachment_selected s on s.id = a.id
                     \\where post_id = ?
-                    \\order by id
+                    \\order by a.id
                 ,
                     .{post.id},
                 );

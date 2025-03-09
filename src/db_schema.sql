@@ -18,8 +18,8 @@ create table attachment (
 );
 
 create table gui_attachment_selected (
-    attachment_id integer primary key,
-    foreign key (attachment_id) references attachment (id) on delete cascade
+    id integer primary key,
+    foreign key (id) references attachment (id) on delete cascade
 );
 
 create table gui_scene (
