@@ -150,17 +150,48 @@ pub fn read(args: ReadArgs) !ReadResult {
     // Now that we're sure the url points to a post that exists, we can examine
     // the later parts if any:
     if (parts.next()) |second_part| {
-        // TODO In the future we'll support uploading assets to a post, in which
-        // case we'll serve them here, but for now, only "index.html" is valid.
+        // Second part is either index.html or a post's attachment.
+        // We'll handle index.html at the end. Here we only serve the
+        // attachment.
         if (!mem.eql(u8, second_part, "index.html")) {
-            return .not_found;
+            const attachment_row = try sql.selectRow(conn,
+                \\select a.data
+                \\from attachment a inner join post p on p.id = a.post_id
+                \\where p.slug=? and a.name=?
+            , .{ post_slug, second_part });
+
+            if (attachment_row) |r| {
+                defer r.deinit();
+                return .{ .file = try arena.dupe(u8, r.blob(0)) };
+            } else {
+                return .not_found;
+            }
         }
     } else {
-        // Post dir only has index.html as child for now.
-        // Later post assets will also end up here.
+        // Post dir contains index.html and its attachments
+
+        // index.html:
         const child = try allocPrint(arena, "{s}index.html", .{prefix});
         var children = try std.ArrayList([]const u8).initCapacity(arena, 1);
         try children.append(child);
+
+        // attachments:
+        var attachment_rows = try sql.rows(
+            conn,
+            \\select a.name
+            \\from attachment a
+            \\  inner join post p on p.id = a.post_id
+            \\where p.slug = ?
+        ,
+            .{post_slug},
+        );
+        while (attachment_rows.next()) |arow| {
+            try children.append(
+                try allocPrint(arena, "{s}{s}", .{ prefix, arow.text(0) }),
+            );
+        }
+        try sql.check(attachment_rows.err, conn);
+
         return .{ .dir = children.items };
     }
 
