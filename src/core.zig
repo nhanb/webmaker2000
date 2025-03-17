@@ -8,6 +8,8 @@ const Database = @import("Database.zig");
 const history = @import("history.zig");
 const sql = @import("sql.zig");
 const queries = @import("queries.zig");
+const maths = @import("maths.zig");
+const constants = @import("constants.zig");
 
 pub const Core = struct {
     state: GuiState = undefined,
@@ -85,10 +87,29 @@ pub const Core = struct {
                     .{@intFromEnum(Modal.confirm_post_deletion)},
                 ));
             },
-            .add_attachments => |payload| {
+            .add_attachments => |payload| blk: {
+                // First check if all files are eligible as attachments
                 for (payload.file_paths) |path| {
                     const file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
-                    const data = try file.readToEndAlloc(arena, 1024 * 1024 * 1024);
+                    defer file.close();
+                    const stat = try file.stat();
+                    if (stat.size > constants.MAX_ATTACHMENT_SIZE) {
+                        // TODO show error dialog instead of just status text
+                        try queries.setStatusText(arena, conn,
+                            \\File {s} too big! ({s})
+                        , .{
+                            std.fs.path.basename(path),
+                            try maths.humanReadableSize(arena, @intCast(stat.size)),
+                        });
+                        break :blk;
+                    }
+                }
+
+                // Now actually add them:
+                for (payload.file_paths) |path| {
+                    const file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
+                    defer file.close();
+                    const data = try file.readToEndAlloc(arena, constants.MAX_ATTACHMENT_SIZE);
                     try sql.exec(
                         conn,
                         \\insert into attachment (post_id, name, data) values (?,?,?)
@@ -301,7 +322,7 @@ pub const GuiState = union(enum) {
 
                 var attachment_rows = try sql.rows(
                     conn,
-                    \\select a.id, a.name, s.id is not null, length(data) / 1024.0 as size_k
+                    \\select a.id, a.name, s.id is not null, length(data)
                     \\from attachment a
                     \\  left outer join gui_attachment_selected s on s.id = a.id
                     \\where post_id = ?
@@ -311,15 +332,11 @@ pub const GuiState = union(enum) {
                 );
                 var attachments: std.ArrayList(Attachment) = .init(arena);
                 while (attachment_rows.next()) |arow| {
-                    // TODO: need a proper bytes-to-K/M/G conversion helper
-                    const size_k = arow.float(3);
-                    const size = try std.fmt.allocPrint(arena, "{d:.2}KiB", .{size_k});
-
                     try attachments.append(Attachment{
                         .id = arow.int(0),
                         .name = try arena.dupe(u8, arow.text(1)),
                         .selected = arow.boolean(2),
-                        .size = size,
+                        .size = try maths.humanReadableSize(arena, arow.int(3)),
                     });
                 }
                 try sql.check(attachment_rows.err, conn);
