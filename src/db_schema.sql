@@ -12,10 +12,20 @@ create table attachment (
     id integer primary key,
     post_id integer not null,
     name text not null,
-    data blob not null,
+    hash text not null check (length(hash) = 64),
+    size_bytes integer not null check (size_bytes >= 0),
     foreign key (post_id) references post (id) on delete cascade,
     unique(post_id, name)
 );
+
+create trigger clean_up_orphaned_blob
+   after delete on attachment
+   when not exists (
+        select * from attachment where hash=old.hash and id != old.id limit 1
+   )
+begin
+    select blobstore_delete(old.hash);
+end;
 
 create table gui_attachment_selected (
     id integer primary key,

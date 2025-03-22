@@ -19,6 +19,7 @@ const GuiState = core_.GuiState;
 const Modal = core_.Modal;
 const Core = core_.Core;
 const sitefs = @import("sitefs.zig");
+const blobstore = @import("blobstore.zig");
 
 const Backend = dvui.backend;
 comptime {
@@ -107,6 +108,12 @@ pub fn main() !void {
         _ = Backend.c.SDL_SetWindowTitle(backend.window, window_title);
 
         maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
+
+        // Change working directory to the same dir as the .wm2k file
+        if (std.fs.path.dirname(existing_file_path)) |dir_path| {
+            try std.posix.chdir(dir_path);
+        }
+        try blobstore.ensureDir();
     }
 
     try djot.init(gpa);
@@ -240,6 +247,12 @@ fn gui_frame(
                         );
 
                         maybe_server = try server.Server.init(gpa, new_file_path, PORT);
+
+                        // Change working directory to the same dir as the .wm2k file
+                        if (std.fs.path.dirname(new_file_path)) |dir_path| {
+                            try std.posix.chdir(dir_path);
+                        }
+                        try blobstore.ensureDir();
                     }
                 }
 
@@ -272,6 +285,12 @@ fn gui_frame(
                         );
 
                         maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
+
+                        // Change working directory to the same dir as the .wm2k file
+                        if (std.fs.path.dirname(existing_file_path)) |dir_path| {
+                            try std.posix.chdir(dir_path);
+                        }
+                        try blobstore.ensureDir();
                     }
                 }
             }

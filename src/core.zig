@@ -10,6 +10,7 @@ const sql = @import("sql.zig");
 const queries = @import("queries.zig");
 const maths = @import("maths.zig");
 const constants = @import("constants.zig");
+const blobstore = @import("blobstore.zig");
 
 pub const Core = struct {
     state: GuiState = undefined,
@@ -93,7 +94,7 @@ pub const Core = struct {
                     const file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
                     defer file.close();
                     const stat = try file.stat();
-                    if (stat.size > constants.MAX_ATTACHMENT_SIZE) {
+                    if (stat.size > constants.MAX_ATTACHMENT_BYTES) {
                         // TODO show error dialog instead of just status text
                         try queries.setStatusText(arena, conn,
                             \\File {s} too big! ({s})
@@ -107,19 +108,21 @@ pub const Core = struct {
 
                 // Now actually add them:
                 for (payload.file_paths) |path| {
+                    const blob = try blobstore.store(arena, path);
+
                     const file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
                     defer file.close();
-                    const data = try file.readToEndAlloc(arena, constants.MAX_ATTACHMENT_SIZE);
                     try sql.exec(
                         conn,
-                        \\insert into attachment (post_id, name, data) values (?,?,?)
-                        \\on conflict (post_id, name) do update set data=?
+                        \\insert into attachment (post_id, name, hash, size_bytes) values (?,?,?,?)
+                        \\on conflict (post_id, name) do update set hash=?
                     ,
                         .{
                             payload.post_id,
                             std.fs.path.basename(path),
-                            zqlite.blob(data),
-                            zqlite.blob(data),
+                            &blob.hash,
+                            blob.size,
+                            &blob.hash,
                         },
                     );
                 }
@@ -322,7 +325,7 @@ pub const GuiState = union(enum) {
 
                 var attachment_rows = try sql.rows(
                     conn,
-                    \\select a.id, a.name, s.id is not null, length(data)
+                    \\select a.id, a.name, s.id is not null, size_bytes
                     \\from attachment a
                     \\  left outer join gui_attachment_selected s on s.id = a.id
                     \\where post_id = ?
