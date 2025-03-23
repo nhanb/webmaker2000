@@ -3,6 +3,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const constants = @import("constants.zig");
+const zqlite = @import("zqlite");
+const c = zqlite.c;
 
 const DIR = "blobs";
 const HASH = std.crypto.hash.sha2.Sha256;
@@ -59,4 +61,47 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         .hash = digest_hex,
         .size = src_bytes.len,
     };
+}
+
+pub fn registerSqliteFunctions(conn: zqlite.Conn) !void {
+    const ret = c.sqlite3_create_function(
+        conn.conn,
+        "blobstore_delete",
+        1,
+        c.SQLITE_UTF8 | c.SQLITE_DETERMINISTIC,
+        null,
+        sqlite_blobstore_delete,
+        null,
+        null,
+    );
+
+    if (ret != c.SQLITE_OK) {
+        return error.CustomFunction;
+    }
+}
+
+/// Sqlite application-defined function that deletes an on-disk blob
+export fn sqlite_blobstore_delete(
+    context: ?*c.sqlite3_context,
+    argc: c_int,
+    argv: [*c]?*c.sqlite3_value,
+) void {
+    _ = argc;
+    const blob_hash = std.mem.span(c.sqlite3_value_text(argv[0].?));
+
+    // TODO: how to handle errors in an sqlite application-defined function?
+    var blobs_dir = std.fs.cwd().openDir(DIR, .{}) catch unreachable;
+    defer blobs_dir.close();
+
+    blobs_dir.deleteFile(blob_hash) catch |err| switch (err) {
+        std.fs.Dir.DeleteFileError.FileNotFound => {
+            std.debug.print("blobstore: {s} does not exist => skipped", .{blob_hash[0..7]});
+            c.sqlite3_result_int64(context, 0);
+        },
+        // TODO: how to handle errors in an sqlite application-defined function?
+        else => unreachable,
+    };
+
+    std.debug.print("blobstore: {s} deleted", .{blob_hash[0..7]});
+    c.sqlite3_result_int64(context, 1);
 }

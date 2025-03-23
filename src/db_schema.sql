@@ -18,6 +18,8 @@ create table attachment (
     unique(post_id, name)
 );
 
+-- Clean up on-disk blob file when the last attachment pointing
+-- to it is deleted.
 create trigger clean_up_orphaned_blob
    after delete on attachment
    when not exists (

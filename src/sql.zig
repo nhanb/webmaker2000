@@ -1,8 +1,8 @@
 // Thin wrappers around zqlite, mostly to print the actual sql errors to make
 // debugging less painful.
-
 const std = @import("std");
 const zqlite = @import("zqlite");
+const blobstore = @import("blobstore.zig");
 
 pub fn openWithSaneDefaults(path: [:0]const u8, flags: c_int) !zqlite.Conn {
     const conn = try zqlite.open(path, flags);
@@ -10,6 +10,7 @@ pub fn openWithSaneDefaults(path: [:0]const u8, flags: c_int) !zqlite.Conn {
         \\PRAGMA foreign_keys = 1;
         \\PRAGMA busy_timeout = 3000;
     );
+    try blobstore.registerSqliteFunctions(conn);
     return conn;
 }
 
