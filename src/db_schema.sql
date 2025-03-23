@@ -20,9 +20,23 @@ create table attachment (
 
 -- Clean up on-disk blob file when the last attachment pointing
 -- to it is deleted.
-create trigger clean_up_orphaned_blob
+create trigger clean_up_orphaned_blob_on_delete
    after delete on attachment
    when not exists (
+        select * from attachment where hash=old.hash and id != old.id limit 1
+   )
+begin
+    select blobstore_delete(old.hash);
+end;
+
+-- Same as above but on update. Sqlite doesn't allow using 1 trigger for
+-- multiple actions.
+-- TODO: It's probably cleaner to implement cleanup logic on application level
+-- so that we don't have to use an application-defined sqlite function, which
+-- would make it possible to manipulate the db with generic sqlite clients.
+create trigger clean_up_orphaned_blob_on_update
+   after update of hash on attachment
+   when new.hash != old.hash and not exists (
         select * from attachment where hash=old.hash and id != old.id limit 1
    )
 begin

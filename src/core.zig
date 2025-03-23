@@ -95,7 +95,8 @@ pub const Core = struct {
                     try sql.exec(
                         conn,
                         \\insert into attachment (post_id, name, hash, size_bytes) values (?,?,?,?)
-                        \\on conflict (post_id, name) do update set hash=?
+                        \\on conflict (post_id, name)
+                        \\  do update set hash=?, size_bytes=?
                     ,
                         .{
                             payload.post_id,
@@ -103,6 +104,7 @@ pub const Core = struct {
                             &blob.hash,
                             blob.size,
                             &blob.hash,
+                            blob.size,
                         },
                     );
                 }
