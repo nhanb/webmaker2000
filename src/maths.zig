@@ -3,7 +3,6 @@ const t = std.testing;
 
 pub fn humanReadableSize(arena: std.mem.Allocator, bytes: i64) ![]const u8 {
     std.debug.assert(bytes >= 0);
-    std.debug.assert(bytes <= 2_147_483_648); // sqlite blob's max size is 2GB
 
     switch (bytes) {
         0...1023 => {

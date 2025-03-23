@@ -88,30 +88,10 @@ pub const Core = struct {
                     .{@intFromEnum(Modal.confirm_post_deletion)},
                 ));
             },
-            .add_attachments => |payload| blk: {
-                // First check if all files are eligible as attachments
-                for (payload.file_paths) |path| {
-                    const file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
-                    defer file.close();
-                    const stat = try file.stat();
-                    if (stat.size > constants.MAX_ATTACHMENT_BYTES) {
-                        // TODO show error dialog instead of just status text
-                        try queries.setStatusText(arena, conn,
-                            \\File {s} too big! ({s})
-                        , .{
-                            std.fs.path.basename(path),
-                            try maths.humanReadableSize(arena, @intCast(stat.size)),
-                        });
-                        break :blk;
-                    }
-                }
-
-                // Now actually add them:
+            .add_attachments => |payload| {
                 for (payload.file_paths) |path| {
                     const blob = try blobstore.store(arena, path);
 
-                    const file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
-                    defer file.close();
                     try sql.exec(
                         conn,
                         \\insert into attachment (post_id, name, hash, size_bytes) values (?,?,?,?)

@@ -1,6 +1,7 @@
 // A content-addressable blob store where each blob is stored as
 // /blobs/<sha256-hash/
 const std = @import("std");
+const print = std.debug.print;
 const Allocator = std.mem.Allocator;
 const constants = @import("constants.zig");
 const zqlite = @import("zqlite");
@@ -22,27 +23,57 @@ pub const BlobInfo = struct {
     size: u64,
 };
 
-/// Stores file path src_abspath in blobs dir, returns its hex digest
+/// Stores file at `src_abspath` in blobs dir, returns its hex digest
+/// TODO: It takes ~9s to hash a 2.6GiB file, while gnu coreutils' sha256sum
+/// command only takes 1.8s. There's room for improvement here. Also see
+/// <https://github.com/ziglang/zig/issues/15916>
+/// TODO: Regardless, this is now long-running-command territory.
+/// I should implement some sort of progress report modal system soon.
 pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
-    var src = try std.fs.openFileAbsolute(src_abspath, .{});
-    const src_bytes = try src.readToEndAlloc(gpa, constants.MAX_ATTACHMENT_BYTES);
-    defer gpa.free(src_bytes);
+    var src_size_bytes: usize = 0;
+    var hash_hex: [HASH.digest_length * 2]u8 = undefined;
 
-    var digest: [HASH.digest_length]u8 = undefined;
-    HASH.hash(src_bytes, &digest, .{});
-    const digest_hex = std.fmt.bytesToHex(digest, .lower);
+    {
+        var hash_timer = try std.time.Timer.start();
+        defer {
+            const hash_time_ms = hash_timer.read() / 1000 / 1000;
+            if (hash_time_ms > 0) {
+                print(
+                    "blobstore: {s} took {d}ms to hash\n",
+                    .{ hash_hex[0..7], hash_time_ms },
+                );
+            }
+        }
+
+        var src = try std.fs.openFileAbsolute(src_abspath, .{});
+        defer src.close();
+
+        var src_buf = try gpa.alloc(u8, 1024 * 1024 * 16);
+        defer gpa.free(src_buf);
+
+        // Stream src data into hasher:
+        var hasher = HASH.init(.{});
+        while (true) {
+            const bytes_read = try src.read(src_buf);
+            if (bytes_read == 0) break;
+            src_size_bytes += bytes_read;
+            hasher.update(src_buf[0..bytes_read]);
+        }
+        const hash_bytes = hasher.finalResult();
+        hash_hex = std.fmt.bytesToHex(hash_bytes, .lower);
+    }
 
     var blob_path: [DIR.len + "/".len + HASH.digest_length * 2]u8 = undefined;
-    _ = try std.fmt.bufPrint(&blob_path, "{s}/{s}", .{ DIR, &digest_hex });
+    _ = try std.fmt.bufPrint(&blob_path, "{s}/{s}", .{ DIR, &hash_hex });
 
     if (std.fs.cwd().statFile(&blob_path) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     }) |stat| {
         if (stat.kind == .file) {
-            std.debug.print("blobstore: {s} already exists => skipped\n", .{digest_hex[0..7]});
+            print("blobstore: {s} already exists => skipped\n", .{hash_hex[0..7]});
             return .{
-                .hash = digest_hex,
+                .hash = hash_hex,
                 .size = stat.size,
             };
         }
@@ -56,10 +87,10 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         .{},
     );
 
-    std.debug.print("blobstore: {s} stored\n", .{digest_hex[0..7]});
+    print("blobstore: {s} stored\n", .{hash_hex[0..7]});
     return .{
-        .hash = digest_hex,
-        .size = src_bytes.len,
+        .hash = hash_hex,
+        .size = src_size_bytes,
     };
 }
 
@@ -95,13 +126,13 @@ export fn sqlite_blobstore_delete(
 
     blobs_dir.deleteFile(blob_hash) catch |err| switch (err) {
         std.fs.Dir.DeleteFileError.FileNotFound => {
-            std.debug.print("blobstore: {s} does not exist => skipped", .{blob_hash[0..7]});
+            print("blobstore: {s} does not exist => skipped", .{blob_hash[0..7]});
             c.sqlite3_result_int64(context, 0);
         },
         // TODO: how to handle errors in an sqlite application-defined function?
         else => unreachable,
     };
 
-    std.debug.print("blobstore: {s} deleted", .{blob_hash[0..7]});
+    print("blobstore: {s} deleted", .{blob_hash[0..7]});
     c.sqlite3_result_int64(context, 1);
 }
