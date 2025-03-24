@@ -4,7 +4,6 @@ const Allocator = std.mem.Allocator;
 
 const zqlite = @import("zqlite");
 
-const Database = @import("Database.zig");
 const history = @import("history.zig");
 const sql = @import("sql.zig");
 const queries = @import("queries.zig");
@@ -14,11 +13,11 @@ const blobstore = @import("blobstore.zig");
 
 pub const Core = struct {
     state: GuiState = undefined,
-    maybe_db: ?Database = null,
+    maybe_conn: ?zqlite.Conn = null,
 
     pub fn deinit(self: *Core) void {
-        if (self.maybe_db) |db| {
-            db.deinit();
+        if (self.maybe_conn) |conn| {
+            conn.close();
         }
     }
 
@@ -245,9 +244,8 @@ pub const GuiState = union(enum) {
         },
     },
 
-    pub fn read(maybe_db: ?Database, arena: std.mem.Allocator) !GuiState {
-        const db = maybe_db orelse return .no_file_opened;
-        const conn = db.conn;
+    pub fn read(maybe_conn: ?zqlite.Conn, arena: std.mem.Allocator) !GuiState {
+        const conn = maybe_conn orelse return .no_file_opened;
 
         const current_scene: Scene = @enumFromInt(
             try sql.selectInt(conn, "select current_scene from gui_scene"),

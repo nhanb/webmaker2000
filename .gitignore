@@ -1,7 +1,5 @@
 /.zig-cache
 /zig-out
 
-# dummy input/output:
-/*.wm2k
+# dummy site:
 /Site1
-/blobs

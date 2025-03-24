@@ -1,5 +1,8 @@
 const std = @import("std");
+const fs = std.fs;
+const mem = std.mem;
 const print = std.debug.print;
+const fmt = std.fmt;
 const allocPrint = std.fmt.allocPrint;
 const dvui = @import("dvui");
 const zqlite = @import("zqlite");
@@ -9,7 +12,6 @@ const history = @import("history.zig");
 const theme = @import("theme.zig");
 const djot = @import("djot.zig");
 const queries = @import("queries.zig");
-const Database = @import("Database.zig");
 const server = @import("server.zig");
 const constants = @import("constants.zig");
 const PORT = constants.PORT;
@@ -39,7 +41,7 @@ pub fn main() !void {
     // wm2k <SERVER_CMD> <DB_PATH> <PORT>
     // to start a web server.
     // This is to be run as a subprocess called by the main program.
-    if (argv.len == 4 and std.mem.eql(u8, argv[1], server.SERVER_CMD)) {
+    if (argv.len == 4 and mem.eql(u8, argv[1], server.SERVER_CMD)) {
         try server.serve(gpa, argv[2], argv[3]);
         return;
     }
@@ -88,32 +90,35 @@ pub fn main() !void {
     var core = Core{};
     defer core.deinit();
 
-    if (argv.len == 2 and std.mem.endsWith(u8, argv[1], "." ++ EXTENSION)) {
+    if (argv.len == 2 and mem.endsWith(u8, argv[1], "." ++ EXTENSION)) {
         // TODO: how to handle errors (e.g. file not found) here? We can't draw
         // anything at this stage.
 
         const existing_file_path = argv[1];
         const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
-        core.maybe_db = try Database.init(gpa, conn, existing_file_path);
+        core.maybe_conn = conn;
 
         try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
         // TODO: read user_version pragma to check if the db was initialized
         // correctly. If not, abort with error message somehow.
 
-        const filename = std.fs.path.basename(existing_file_path);
-        try queries.setStatusText(gpa, conn, "Opened {s}", .{existing_file_path});
-        const window_title = try std.fmt.allocPrintZ(gpa, "{s} - WebMaker2000", .{filename});
-        defer gpa.free(window_title);
-        _ = Backend.c.SDL_SetWindowTitle(backend.window, window_title);
-
         maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
 
         // Change working directory to the same dir as the .wm2k file
-        if (std.fs.path.dirname(existing_file_path)) |dir_path| {
+        if (fs.path.dirname(existing_file_path)) |dir_path| {
             try std.posix.chdir(dir_path);
         }
         try blobstore.ensureDir();
+
+        const absolute_path = try fs.cwd().realpathAlloc(gpa, ".");
+        defer gpa.free(absolute_path);
+
+        const dir_name = fs.path.basename(absolute_path);
+        const window_title = try fmt.allocPrintZ(gpa, "{s} - WebMaker2000", .{dir_name});
+        defer gpa.free(window_title);
+        try queries.setStatusText(gpa, conn, "Opened {s}", .{dir_name});
+        _ = Backend.c.SDL_SetWindowTitle(backend.window, window_title);
     }
 
     try djot.init(gpa);
@@ -130,7 +135,7 @@ pub fn main() !void {
     main_loop: while (true) {
         defer _ = arena.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
 
-        core.state = try GuiState.read(core.maybe_db, arena.allocator());
+        core.state = try GuiState.read(core.maybe_conn, arena.allocator());
 
         // beginWait coordinates with waitTime below to run frames only when needed
         const nstime = win.beginWait(backend.hasEvent());
@@ -173,8 +178,8 @@ pub fn main() !void {
 fn gui_frame(
     core: *Core,
     backend: *dvui.backend,
-    arena: std.mem.Allocator,
-    gpa: std.mem.Allocator, // for data that needs to survive to next frame
+    arena: mem.Allocator,
+    gpa: mem.Allocator, // for data that needs to survive to next frame
 ) !void {
     var background = try dvui.overlay(@src(), .{
         .expand = .both,
@@ -204,32 +209,36 @@ fn gui_frame(
                 defer hbox.deinit();
 
                 if (try dvui.button(@src(), "New...", .{}, .{})) {
-                    if (try dvui.dialogNativeFileSave(arena, .{
-                        .title = "Create new site",
-                        .filters = &.{"*." ++ EXTENSION},
-                    })) |new_file_path| {
-                        // Apparently interaction with the system file dialog
-                        // does not count as user interaction in dvui, so
-                        // there's a chance the UI won't be refreshed after a
-                        // file is chosen. Therefore, we need to manually
-                        // tell dvui to draw the next frame right after this
-                        // frame:
-                        dvui.refresh(null, @src(), null);
+                    if (try dvui.dialogNativeFolderSelect(arena, .{
+                        .title = "Create new site - Choose an empty folder",
+                    })) |new_site_dir_path| new_site_block: {
+                        var site_dir = try fs.cwd().openDir(new_site_dir_path, .{ .iterate = true });
+                        defer site_dir.close();
 
-                        // Assuming the native "save file" dialog has
-                        // already asked for user confirmation if the chosen
-                        // file already exists, we can safely delete it now:
-                        std.fs.deleteFileAbsolute(new_file_path) catch |err| {
-                            if (err != error.FileNotFound) {
-                                return err;
-                            }
-                        };
+                        // TODO: find cleaner way to check if dir has children
+                        var dir_iterator = site_dir.iterate();
+                        var has_children = false;
+                        while (try dir_iterator.next()) |_| {
+                            has_children = true;
+                            break;
+                        }
+
+                        // TODO: show error message
+                        if (has_children) {
+                            try dvui.dialog(@src(), .{
+                                .title = "Chosen folder was not empty!",
+                                .message = "Please choose an empty folder for your new site.",
+                            });
+                            break :new_site_block;
+                        }
+
+                        try site_dir.setAsCwd();
 
                         const conn = try sql.openWithSaneDefaults(
-                            new_file_path,
+                            try arena.dupeZ(u8, constants.SITE_FILE),
                             zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.Create,
                         );
-                        core.maybe_db = try Database.init(gpa, conn, new_file_path);
+                        core.maybe_conn = conn;
 
                         try sql.execNoArgs(conn, "pragma foreign_keys = on");
 
@@ -239,20 +248,24 @@ fn gui_frame(
                         try history.createTriggers(history.Redo, conn, arena);
                         try sql.execNoArgs(conn, "commit");
 
-                        const filename = std.fs.path.basename(new_file_path);
+                        const filename = fs.path.basename(new_site_dir_path);
                         try queries.setStatusText(arena, conn, "Created {s}", .{filename});
                         _ = Backend.c.SDL_SetWindowTitle(
                             backend.window,
-                            try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
+                            try fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
 
-                        maybe_server = try server.Server.init(gpa, new_file_path, PORT);
+                        maybe_server = try server.Server.init(gpa, new_site_dir_path, PORT);
 
-                        // Change working directory to the same dir as the .wm2k file
-                        if (std.fs.path.dirname(new_file_path)) |dir_path| {
-                            try std.posix.chdir(dir_path);
-                        }
                         try blobstore.ensureDir();
+
+                        // Apparently interaction with the system file dialog
+                        // does not count as user interaction in dvui, so
+                        // there's a chance the UI won't be refreshed after a
+                        // file is chosen. Therefore, we need to manually
+                        // tell dvui to draw the next frame right after this
+                        // frame:
+                        dvui.refresh(null, @src(), null);
                     }
                 }
 
@@ -261,6 +274,30 @@ fn gui_frame(
                         .title = "Open site",
                         .filters = &.{"*." ++ EXTENSION},
                     })) |existing_file_path| {
+                        const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
+                        core.maybe_conn = conn;
+
+                        try sql.execNoArgs(conn, "pragma foreign_keys = on");
+
+                        // TODO: read user_version pragma to check if the db was initialized
+                        // correctly. If not, abort with error message somehow.
+
+                        maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
+
+                        // Change working directory to the same dir as the .wm2k file
+                        if (fs.path.dirname(existing_file_path)) |dir_path| {
+                            try std.posix.chdir(dir_path);
+                        }
+
+                        try blobstore.ensureDir();
+
+                        const dir_name = fs.path.basename(try fs.cwd().realpathAlloc(arena, "."));
+                        try queries.setStatusText(arena, conn, "Opened {s}", .{dir_name});
+                        _ = Backend.c.SDL_SetWindowTitle(
+                            backend.window,
+                            try fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{dir_name}),
+                        );
+
                         // Apparently interaction with the system file dialog
                         // does not count as user interaction in dvui, so
                         // there's a chance the UI won't be refreshed after a
@@ -268,29 +305,6 @@ fn gui_frame(
                         // tell dvui to draw the next frame right after this
                         // frame:
                         dvui.refresh(null, @src(), null);
-
-                        const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
-                        core.maybe_db = try Database.init(gpa, conn, existing_file_path);
-
-                        try sql.execNoArgs(conn, "pragma foreign_keys = on");
-
-                        // TODO: read user_version pragma to check if the db was initialized
-                        // correctly. If not, abort with error message somehow.
-
-                        const filename = std.fs.path.basename(existing_file_path);
-                        try queries.setStatusText(arena, conn, "Opened {s}", .{filename});
-                        _ = Backend.c.SDL_SetWindowTitle(
-                            backend.window,
-                            try std.fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
-                        );
-
-                        maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
-
-                        // Change working directory to the same dir as the .wm2k file
-                        if (std.fs.path.dirname(existing_file_path)) |dir_path| {
-                            try std.posix.chdir(dir_path);
-                        }
-                        try blobstore.ensureDir();
                     }
                 }
             }
@@ -298,8 +312,7 @@ fn gui_frame(
 
         // User has actually opened a file => show main UI:
         .opened => |state| {
-            const db = core.maybe_db.?;
-            const conn = db.conn;
+            const conn = core.maybe_conn.?;
 
             const undos = state.history.undos;
             const redos = state.history.redos;
@@ -349,12 +362,10 @@ fn gui_frame(
                 if (try theme.button(@src(), "Generate", .{}, .{}, generate_disabled)) {
                     var timer = try std.time.Timer.start();
 
-                    const output_path = db.output_path();
+                    var cwd = fs.cwd();
+                    try cwd.deleteTree(constants.OUTPUT_DIR);
 
-                    var cwd = std.fs.cwd();
-                    try cwd.deleteTree(output_path);
-
-                    var out_dir = try cwd.makeOpenPath(output_path, .{});
+                    var out_dir = try cwd.makeOpenPath(constants.OUTPUT_DIR, .{});
                     defer out_dir.close();
                     try sitefs.generate(arena, conn, "", out_dir);
 
@@ -368,7 +379,7 @@ fn gui_frame(
                 }
 
                 //var buf: [100]u8 = undefined;
-                //const fps_str = std.fmt.bufPrint(&buf, "{d:0>3.0} fps", .{dvui.FPS()}) catch unreachable;
+                //const fps_str = fmt.bufPrint(&buf, "{d:0>3.0} fps", .{dvui.FPS()}) catch unreachable;
                 //try dvui.label(@src(), "{s}", .{fps_str}, .{ .gravity_x = 1 });
 
                 const url = switch (state.scene) {
