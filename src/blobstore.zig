@@ -8,7 +8,7 @@ const zqlite = @import("zqlite");
 const c = zqlite.c;
 
 const DIR = "blobs";
-const HASH = std.crypto.hash.sha2.Sha256;
+pub const HASH = std.crypto.hash.sha2.Sha256;
 
 /// Assumes working dir is already correct (i.e. dir that contains .wm2k file)
 pub fn ensureDir() !void {
@@ -63,10 +63,9 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         hash_hex = std.fmt.bytesToHex(hash_bytes, .lower);
     }
 
-    var blob_path: [DIR.len + "/".len + HASH.digest_length * 2]u8 = undefined;
-    _ = try std.fmt.bufPrint(&blob_path, "{s}/{s}", .{ DIR, &hash_hex });
+    const file_path = try blob_path(hash_hex);
 
-    if (std.fs.cwd().statFile(&blob_path) catch |err| switch (err) {
+    if (std.fs.cwd().statFile(&file_path) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     }) |stat| {
@@ -83,7 +82,7 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         try std.fs.openDirAbsolute(std.fs.path.dirname(src_abspath).?, .{}),
         std.fs.path.basename(src_abspath),
         std.fs.cwd(),
-        &blob_path,
+        &file_path,
         .{},
     );
 
@@ -92,6 +91,17 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         .hash = hash_hex,
         .size = src_size_bytes,
     };
+}
+
+pub fn blob_path(hash: [HASH.digest_length * 2]u8) ![DIR.len + "/".len + HASH.digest_length * 2]u8 {
+    var path: [DIR.len + "/".len + HASH.digest_length * 2]u8 = undefined;
+    _ = try std.fmt.bufPrint(&path, "{s}/{s}", .{ DIR, &hash });
+    return path;
+}
+
+pub fn read(arena: Allocator, hash: [HASH.digest_length * 2]u8) ![]const u8 {
+    const path = try blob_path(hash);
+    return try std.fs.cwd().readFileAlloc(arena, &path, 9_223_372_036_854_775_807);
 }
 
 pub fn registerSqliteFunctions(conn: zqlite.Conn) !void {

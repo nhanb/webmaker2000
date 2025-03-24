@@ -8,6 +8,7 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const djot = @import("djot.zig");
 const html = @import("html.zig");
+const blobstore = @import("blobstore.zig");
 
 const MAX_URL_LEN = 2048; // https://stackoverflow.com/a/417184
 
@@ -155,14 +156,16 @@ pub fn read(args: ReadArgs) !ReadResult {
         // attachment.
         if (!mem.eql(u8, second_part, "index.html")) {
             const attachment_row = try sql.selectRow(conn,
-                \\select a.data
+                \\select a.hash
                 \\from attachment a inner join post p on p.id = a.post_id
                 \\where p.slug=? and a.name=?
             , .{ post_slug, second_part });
 
             if (attachment_row) |r| {
                 defer r.deinit();
-                return .{ .file = try arena.dupe(u8, r.blob(0)) };
+                const blob_hash = (r.text(0)[0 .. blobstore.HASH.digest_length * 2]).*;
+                // TODO: don't read whole file into memory if we can help it
+                return .{ .file = try blobstore.read(arena, blob_hash) };
             } else {
                 return .not_found;
             }
