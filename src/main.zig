@@ -380,6 +380,7 @@ fn gui_frame(
                 //var buf: [100]u8 = undefined;
                 //const fps_str = fmt.bufPrint(&buf, "{d:0>3.0} fps", .{dvui.FPS()}) catch unreachable;
                 //try dvui.label(@src(), "{s}", .{fps_str}, .{ .gravity_x = 1 });
+                //dvui.refresh(null, @src(), null);
 
                 const url = switch (state.scene) {
                     .listing => try allocPrint(arena, "http://localhost:{d}", .{PORT}),

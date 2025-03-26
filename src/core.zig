@@ -1,5 +1,4 @@
 const std = @import("std");
-const print = std.debug.print;
 const Allocator = std.mem.Allocator;
 
 const zqlite = @import("zqlite");
@@ -10,6 +9,7 @@ const queries = @import("queries.zig");
 const maths = @import("maths.zig");
 const constants = @import("constants.zig");
 const blobstore = @import("blobstore.zig");
+const println = @import("util.zig").println;
 
 pub const Core = struct {
     state: GuiState = undefined,
@@ -17,6 +17,11 @@ pub const Core = struct {
 
     pub fn deinit(self: *Core) void {
         if (self.maybe_conn) |conn| {
+            // On exit, perform an sqlite WAL checkpoint:
+            // https://www.sqlite.org/pragma.html#pragma_wal_checkpoint
+            sql.execNoArgs(conn, "PRAGMA wal_checkpoint(TRUNCATE);") catch |err| {
+                println("ERR during wal_checkpoint: {}", .{err});
+            };
             conn.close();
         }
     }

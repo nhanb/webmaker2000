@@ -10,6 +10,11 @@ pub fn openWithSaneDefaults(path: [:0]const u8, flags: c_int) !zqlite.Conn {
     try execNoArgs(conn,
         \\PRAGMA foreign_keys = 1;
         \\PRAGMA busy_timeout = 3000;
+        \\PRAGMA journal_mode = WAL;
+        \\PRAGMA wal_autocheckpoint = 1000;
+        // TODO: should we disable autocheckpoint? We already manually
+        // checkpoint on exit, but then again, the WAL file seems to grow very
+        // quickly without autocheckpoint...
     );
     try blobstore.registerSqliteFunctions(conn);
     return conn;
