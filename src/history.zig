@@ -183,7 +183,7 @@ pub fn undo(
     if (barriers.len == 0) return;
 
     var timer = try std.time.Timer.start();
-    defer println(">> undo() took {}ms", .{timer.read() / 1_000_000});
+    defer println("undo: took {}ms", .{timer.read() / 1_000_000});
 
     try disableUndoTriggers(conn);
     try enableRedoTriggers(conn);
@@ -352,7 +352,7 @@ pub fn redo(
     if (barriers.len == 0) return;
 
     var timer = try std.time.Timer.start();
-    defer println(">> redo() took {}ms", .{timer.read() / 1_000_000});
+    defer println("redo: took {}ms", .{timer.read() / 1_000_000});
 
     try disableUndoTriggers(conn);
 

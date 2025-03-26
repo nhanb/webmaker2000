@@ -19,11 +19,15 @@ create table attachment (
 );
 
 -- Clean up on-disk blob file when the last attachment pointing
--- to it is deleted.
+-- to it is deleted AND its hash is no longer found in undo/redo stacks.
 create trigger clean_up_orphaned_blob_on_delete
    after delete on attachment
    when not exists (
         select * from attachment where hash=old.hash and id != old.id limit 1
+   ) and not exists (
+        select * from history_undo where statement like concat('%', old.hash, '%') limit 1
+   ) and not exists (
+        select * from history_redo where statement like concat('%', old.hash, '%') limit 1
    )
 begin
     select blobstore_delete(old.hash);
@@ -38,6 +42,10 @@ create trigger clean_up_orphaned_blob_on_update
    after update of hash on attachment
    when new.hash != old.hash and not exists (
         select * from attachment where hash=old.hash and id != old.id limit 1
+   ) and not exists (
+        select * from history_undo where statement like concat('%', old.hash, '%') limit 1
+   ) and not exists (
+        select * from history_redo where statement like concat('%', old.hash, '%') limit 1
    )
 begin
     select blobstore_delete(old.hash);
