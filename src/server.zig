@@ -7,14 +7,17 @@ const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const djot = @import("djot.zig");
 const sitefs = @import("sitefs.zig");
+const constants = @import("constants.zig");
 
 pub const SERVER_CMD = "server";
 
-/// Spawn a child process that starts the http preview server
 pub const Server = struct {
     process: std.process.Child,
 
-    pub fn init(gpa: mem.Allocator, db_path: []const u8, port: u16) !Server {
+    /// Spawns a child process that starts the http preview server.
+    /// Assumes cwd() is already the site's dir, in other words, the same dir
+    /// the contains `site.wm2k`.
+    pub fn init(gpa: mem.Allocator, port: u16) !Server {
         var exe_path_buf: [1024 * 5]u8 = undefined;
         const exe_path = try std.fs.selfExePath(&exe_path_buf);
 
@@ -24,7 +27,6 @@ pub const Server = struct {
         const command: []const []const u8 = &.{
             exe_path,
             SERVER_CMD,
-            db_path,
             port_str,
         };
         var proc = std.process.Child.init(command, gpa);
@@ -39,7 +41,7 @@ pub const Server = struct {
 };
 
 /// Main entry point of the preview server subprocess:
-pub fn serve(gpa: mem.Allocator, file_path: [:0]const u8, port_str: []const u8) !void {
+pub fn serve(gpa: mem.Allocator, port_str: []const u8) !void {
     const port = try std.fmt.parseInt(u16, port_str, 10);
 
     try djot.init(gpa);
@@ -56,12 +58,12 @@ pub fn serve(gpa: mem.Allocator, file_path: [:0]const u8, port_str: []const u8) 
             print("Connection to client interrupted: {}\n", .{err});
             continue;
         };
-        var thread = try std.Thread.spawn(.{}, handle_request, .{ connection, file_path });
+        var thread = try std.Thread.spawn(.{}, handle_request, .{connection});
         thread.detach();
     }
 }
 
-fn handle_request(connection: net.Server.Connection, file_path: [:0]const u8) !void {
+fn handle_request(connection: net.Server.Connection) !void {
     print("Incoming request\n", .{});
     defer connection.stream.close();
 
@@ -76,7 +78,7 @@ fn handle_request(connection: net.Server.Connection, file_path: [:0]const u8) !v
     print("Server serving {s}\n", .{request.head.target});
 
     var conn = try zqlite.Conn.init(
-        file_path,
+        constants.SITE_FILE,
         zqlite.OpenFlags.EXResCode | zqlite.OpenFlags.ReadOnly,
     );
     defer conn.close();

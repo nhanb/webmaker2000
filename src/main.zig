@@ -38,11 +38,13 @@ pub fn main() !void {
     const argv = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, argv);
 
-    // wm2k <SERVER_CMD> <DB_PATH> <PORT>
+    // wm2k <SERVER_CMD> <PORT>
     // to start a web server.
     // This is to be run as a subprocess called by the main program.
-    if (argv.len == 4 and mem.eql(u8, argv[1], server.SERVER_CMD)) {
-        try server.serve(gpa, argv[2], argv[3]);
+    // It assumes the current working directory is the same dir that contains
+    // the site.wm2k file.
+    if (argv.len == 3 and mem.eql(u8, argv[1], server.SERVER_CMD)) {
+        try server.serve(gpa, argv[2]);
         return;
     }
 
@@ -95,20 +97,19 @@ pub fn main() !void {
         // anything at this stage.
 
         const existing_file_path = argv[1];
+
         const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
         core.maybe_conn = conn;
-
-        try sql.execNoArgs(conn, "pragma foreign_keys = on");
-
         // TODO: read user_version pragma to check if the db was initialized
         // correctly. If not, abort with error message somehow.
-
-        maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
 
         // Change working directory to the same dir as the .wm2k file
         if (fs.path.dirname(existing_file_path)) |dir_path| {
             try std.posix.chdir(dir_path);
         }
+
+        maybe_server = try server.Server.init(gpa, PORT);
+
         try blobstore.ensureDir();
 
         const absolute_path = try fs.cwd().realpathAlloc(gpa, ".");
@@ -255,7 +256,7 @@ fn gui_frame(
                             try fmt.allocPrintZ(arena, "{s} - WebMaker2000", .{filename}),
                         );
 
-                        maybe_server = try server.Server.init(gpa, new_site_dir_path, PORT);
+                        maybe_server = try server.Server.init(gpa, PORT);
 
                         try blobstore.ensureDir();
 
@@ -276,18 +277,15 @@ fn gui_frame(
                     })) |existing_file_path| {
                         const conn = try sql.openWithSaneDefaults(existing_file_path, zqlite.OpenFlags.EXResCode);
                         core.maybe_conn = conn;
-
-                        try sql.execNoArgs(conn, "pragma foreign_keys = on");
-
                         // TODO: read user_version pragma to check if the db was initialized
                         // correctly. If not, abort with error message somehow.
-
-                        maybe_server = try server.Server.init(gpa, existing_file_path, PORT);
 
                         // Change working directory to the same dir as the .wm2k file
                         if (fs.path.dirname(existing_file_path)) |dir_path| {
                             try std.posix.chdir(dir_path);
                         }
+
+                        maybe_server = try server.Server.init(gpa, PORT);
 
                         try blobstore.ensureDir();
 
