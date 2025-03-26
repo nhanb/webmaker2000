@@ -1,5 +1,5 @@
 const std = @import("std");
-const print = std.debug.print;
+const println = @import("util.zig").println;
 const lua_wrapper = @import("lua_wrapper");
 const djot_lua = @embedFile("djot.lua");
 
@@ -16,7 +16,7 @@ pub fn init(gpa: std.mem.Allocator) !void {
 
     // load the djot.lua amalgamation
     lua.doString(djot_lua) catch |err| {
-        print("lua error: {s}\n", .{try lua.toString(-1)});
+        println("lua error: {s}", .{try lua.toString(-1)});
         return err;
     };
 
@@ -27,7 +27,7 @@ pub fn init(gpa: std.mem.Allocator) !void {
         \\  return djot.render_html(djot.parse(input))
         \\end
     ) catch |err| {
-        print("lua error: {s}\n", .{try lua.toString(-1)});
+        println("lua error: {s}", .{try lua.toString(-1)});
         return err;
     };
 }
@@ -47,7 +47,7 @@ pub fn toHtml(gpa: std.mem.Allocator, input: []const u8) ![]const u8 {
     _ = try lua.getGlobal("djotToHtml");
     _ = lua.pushString(input);
     lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
-        print("lua error: {s}\n", .{try lua.toString(-1)});
+        println("lua error: {s}", .{try lua.toString(-1)});
         return err;
     };
 

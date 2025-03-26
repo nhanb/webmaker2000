@@ -1,6 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const print = std.debug.print;
+const println = @import("util.zig").println;
 const allocPrint = std.fmt.allocPrint;
 const mem = std.mem;
 const fs = std.fs;
@@ -58,7 +58,7 @@ pub fn read(args: ReadArgs) !ReadResult {
     const conn = args.conn;
     const list_children = args.list_children;
 
-    print("stat: {s}\n", .{path});
+    println("stat: {s}", .{path});
 
     const prefix = if (path.len == 0)
         ""

@@ -2,7 +2,7 @@ const std = @import("std");
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const queries = @import("queries.zig");
-const print = std.debug.print;
+const println = @import("util.zig").println;
 const core = @import("core.zig");
 
 pub const Barrier = struct {
@@ -63,7 +63,7 @@ pub fn createTriggers(
     arena: std.mem.Allocator,
 ) !void {
     var timer = try std.time.Timer.start();
-    defer std.debug.print("** createTriggers() took {}ms\n", .{timer.read() / 1_000_000});
+    defer println("** createTriggers() took {}ms", .{timer.read() / 1_000_000});
 
     inline for (HISTORY_TABLES) |table| {
         // First colect this table's column names
@@ -183,7 +183,7 @@ pub fn undo(
     if (barriers.len == 0) return;
 
     var timer = try std.time.Timer.start();
-    defer std.debug.print(">> undo() took {}ms\n", .{timer.read() / 1_000_000});
+    defer println(">> undo() took {}ms", .{timer.read() / 1_000_000});
 
     try disableUndoTriggers(conn);
     try enableRedoTriggers(conn);
@@ -352,7 +352,7 @@ pub fn redo(
     if (barriers.len == 0) return;
 
     var timer = try std.time.Timer.start();
-    defer std.debug.print(">> redo() took {}ms\n", .{timer.read() / 1_000_000});
+    defer println(">> redo() took {}ms", .{timer.read() / 1_000_000});
 
     try disableUndoTriggers(conn);
 

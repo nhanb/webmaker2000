@@ -2,12 +2,12 @@ const std = @import("std");
 const net = std.net;
 const http = std.http;
 const mem = std.mem;
-const print = std.debug.print;
 const zqlite = @import("zqlite");
 const sql = @import("sql.zig");
 const djot = @import("djot.zig");
 const sitefs = @import("sitefs.zig");
 const constants = @import("constants.zig");
+const println = @import("util.zig").println;
 
 pub const SERVER_CMD = "server";
 
@@ -47,15 +47,15 @@ pub fn serve(gpa: mem.Allocator, port_str: []const u8) !void {
     try djot.init(gpa);
     defer djot.deinit();
 
-    print("Server starting at http://localhost:{d}\n", .{port});
+    println("Server starting at http://localhost:{d}", .{port});
 
     const address = try net.Address.parseIp4("127.0.0.1", port);
     var net_server = try address.listen(.{ .reuse_address = true });
 
     while (true) {
-        print("Waiting for new connection...\n", .{});
+        println("Waiting for new connection...", .{});
         const connection = net_server.accept() catch |err| {
-            print("Connection to client interrupted: {}\n", .{err});
+            println("Connection to client interrupted: {}", .{err});
             continue;
         };
         var thread = try std.Thread.spawn(.{}, handle_request, .{connection});
@@ -64,18 +64,18 @@ pub fn serve(gpa: mem.Allocator, port_str: []const u8) !void {
 }
 
 fn handle_request(connection: net.Server.Connection) !void {
-    print("Incoming request\n", .{});
+    println("Incoming request", .{});
     defer connection.stream.close();
 
     var read_buffer: [1024 * 512]u8 = undefined;
     var http_server = http.Server.init(connection, &read_buffer);
 
     var request = http_server.receiveHead() catch |err| {
-        print("Could not read head: {}\n", .{err});
+        println("Could not read head: {}", .{err});
         return;
     };
 
-    print("Server serving {s}\n", .{request.head.target});
+    println("Server serving {s}", .{request.head.target});
 
     var conn = try zqlite.Conn.init(
         constants.SITE_FILE,

@@ -3,6 +3,7 @@
 const std = @import("std");
 const zqlite = @import("zqlite");
 const blobstore = @import("blobstore.zig");
+const println = @import("util.zig").println;
 
 pub fn openWithSaneDefaults(path: [:0]const u8, flags: c_int) !zqlite.Conn {
     const conn = try zqlite.open(path, flags);
@@ -16,35 +17,35 @@ pub fn openWithSaneDefaults(path: [:0]const u8, flags: c_int) !zqlite.Conn {
 
 pub fn exec(conn: zqlite.Conn, sql: []const u8, args: anytype) !void {
     conn.exec(sql, args) catch |err| {
-        std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+        println(">> sql error: {s}", .{conn.lastError()});
         return err;
     };
 }
 
 pub fn execNoArgs(conn: zqlite.Conn, sql: [*:0]const u8) !void {
     conn.execNoArgs(sql) catch |err| {
-        std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+        println(">> sql error: {s}", .{conn.lastError()});
         return err;
     };
 }
 
 pub fn rows(conn: zqlite.Conn, sql: []const u8, args: anytype) !zqlite.Rows {
     return conn.rows(sql, args) catch |err| {
-        std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+        println(">> sql error: {s}", .{conn.lastError()});
         return err;
     };
 }
 
 pub fn check(err: ?zqlite.Error, conn: zqlite.Conn) !void {
     if (err != null) {
-        std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+        println(">> sql error: {s}", .{conn.lastError()});
         return err.?;
     }
 }
 
 pub fn selectRow(conn: zqlite.Conn, sql: []const u8, args: anytype) !?zqlite.Row {
     return (conn.row(sql, args) catch |err| {
-        std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+        println(">> sql error: {s}", .{conn.lastError()});
         return err;
     });
 }
@@ -52,7 +53,7 @@ pub fn selectRow(conn: zqlite.Conn, sql: []const u8, args: anytype) !?zqlite.Row
 /// Assumes the result is only 1 row with 1 column, which is an int.
 pub fn selectInt(conn: zqlite.Conn, sql: []const u8) !i64 {
     var row = (conn.row(sql, .{}) catch |err| {
-        std.debug.print(">> sql error: {s}\n", .{conn.lastError()});
+        println(">> sql error: {s}", .{conn.lastError()});
         return err;
     }).?;
     defer row.deinit();

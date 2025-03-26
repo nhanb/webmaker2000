@@ -1,11 +1,11 @@
 // A content-addressable blob store where each blob is stored as
 // /blobs/<sha256-hash/
 const std = @import("std");
-const print = std.debug.print;
 const Allocator = std.mem.Allocator;
-const constants = @import("constants.zig");
 const zqlite = @import("zqlite");
 const c = zqlite.c;
+const constants = @import("constants.zig");
+const println = @import("util.zig").println;
 
 const DIR = "blobs";
 pub const HASH = std.crypto.hash.sha2.Sha256;
@@ -38,8 +38,8 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         defer {
             const hash_time_ms = hash_timer.read() / 1000 / 1000;
             if (hash_time_ms > 0) {
-                print(
-                    "blobstore: {s} took {d}ms to hash\n",
+                println(
+                    "blobstore: {s} took {d}ms to hash",
                     .{ hash_hex[0..7], hash_time_ms },
                 );
             }
@@ -70,7 +70,7 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         else => return err,
     }) |stat| {
         if (stat.kind == .file) {
-            print("blobstore: {s} already exists => skipped\n", .{hash_hex[0..7]});
+            println("blobstore: {s} already exists => skipped", .{hash_hex[0..7]});
             return .{
                 .hash = hash_hex,
                 .size = stat.size,
@@ -86,7 +86,7 @@ pub fn store(gpa: Allocator, src_abspath: []const u8) !BlobInfo {
         .{},
     );
 
-    print("blobstore: {s} stored\n", .{hash_hex[0..7]});
+    println("blobstore: {s} stored", .{hash_hex[0..7]});
     return .{
         .hash = hash_hex,
         .size = src_size_bytes,
@@ -136,13 +136,14 @@ export fn sqlite_blobstore_delete(
 
     blobs_dir.deleteFile(blob_hash) catch |err| switch (err) {
         std.fs.Dir.DeleteFileError.FileNotFound => {
-            print("blobstore: {s} does not exist => skipped", .{blob_hash[0..7]});
+            println("blobstore: {s} does not exist => skipped", .{blob_hash[0..7]});
             c.sqlite3_result_int64(context, 0);
+            return;
         },
         // TODO: how to handle errors in an sqlite application-defined function?
         else => unreachable,
     };
 
-    print("blobstore: {s} deleted", .{blob_hash[0..7]});
+    println("blobstore: {s} deleted", .{blob_hash[0..7]});
     c.sqlite3_result_int64(context, 1);
 }
