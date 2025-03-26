@@ -22,6 +22,7 @@ const Modal = core_.Modal;
 const Core = core_.Core;
 const sitefs = @import("sitefs.zig");
 const blobstore = @import("blobstore.zig");
+const println = @import("util.zig").println;
 
 const Backend = dvui.backend;
 comptime {
@@ -651,6 +652,11 @@ fn gui_frame(
 
                                     var atm_group = try dvui.box(@src(), .horizontal, .{ .id_extra = i });
                                     defer atm_group.deinit();
+
+                                    if (try dvui.buttonIcon(@src(), "copy", dvui.entypo.copy, .{}, .{ .max_size_content = .all(13) })) {
+                                        try dvui.clipboardTextSet(attachment.name);
+                                        try queries.setStatusText(arena, conn, "Copied file name: {s}", .{attachment.name});
+                                    }
 
                                     if (try dvui.checkbox(
                                         @src(),
