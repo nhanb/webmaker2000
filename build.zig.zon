@@ -4,8 +4,8 @@
     .fingerprint = 0xbbb760496aeb26ae,
     .dependencies = .{
         .dvui = .{
-            .url = "git+https://github.com/david-vanderson/dvui?ref=main#5e30428fb546a81c0aef8f236578650eecce3852",
-            .hash = "dvui-0.2.0-AQFJmbFoygBQC9OGkf4FyvXlzmvryQ1_WPrerHJwRpBd",
+            .url = "git+https://github.com/david-vanderson/dvui?ref=main#49c99ddea7a5da5490937ef4b8dfd797c5f2900f",
+            .hash = "dvui-0.2.0-AQFJmeqczABmEvNRzhffd4ozCmWHR2O8cJMOGxqdQTjs",
         },
         .zqlite = .{
             .url = "git+https://github.com/karlseguin/zqlite.zig?ref=master#d146898482a4c4bdcba487496f67a24afa12894d",

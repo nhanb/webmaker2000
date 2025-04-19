@@ -14,9 +14,9 @@ pub fn build(b: *std.Build) !void {
     const dvui_dep = b.dependency("dvui", .{
         .target = target,
         .optimize = optimize,
-        .sdl3 = true,
+        .backend = .sdl3,
     });
-    exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl"));
+    exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl3"));
 
     // zqlite
     const zqlite = b.dependency("zqlite", .{

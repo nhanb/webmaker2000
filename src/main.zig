@@ -227,7 +227,7 @@ fn gui_frame(
 
                         // TODO: show error message
                         if (has_children) {
-                            try dvui.dialog(@src(), .{
+                            try dvui.dialog(@src(), .{}, .{
                                 .title = "Chosen folder was not empty!",
                                 .message = "Please choose an empty folder for your new site.",
                             });
