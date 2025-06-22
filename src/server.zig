@@ -18,15 +18,17 @@ pub const Server = struct {
     /// Assumes cwd() is already the site's dir, in other words, the same dir
     /// the contains `site.wm2k`.
     pub fn init(gpa: mem.Allocator, port: u16) !Server {
-        var exe_path_buf: [1024 * 5]u8 = undefined;
-        const exe_path = try std.fs.selfExePath(&exe_path_buf);
+        // https://blog.codinghorror.com/filesystem-paths-how-long-is-too-long/
+        var exe_path_buf: [32_000]u8 = undefined;
+        const exe_dir_path = try std.fs.selfExeDirPath(&exe_path_buf);
+        _ = try std.fmt.bufPrint(exe_path_buf[exe_dir_path.len..], "/wm2k-serve", .{});
+        const exe_path = exe_path_buf[0 .. exe_dir_path.len + "/wm2k-serve".len];
 
         var port_buf: [5]u8 = undefined;
         const port_str = std.fmt.bufPrintIntToSlice(&port_buf, port, 10, .upper, .{});
 
         const command: []const []const u8 = &.{
             exe_path,
-            SERVER_CMD,
             port_str,
         };
         var proc = std.process.Child.init(command, gpa);
