@@ -19,24 +19,30 @@ pub fn build(b: *std.Build) !void {
     });
 
     // dvui
-    switch (target.result.os.tag) {
-        .windows => {
-            const dvui_dep = b.dependency("dvui", .{
-                .target = target,
-                .optimize = optimize,
-                .backend = .dx11,
-            });
-            main_exe.root_module.addImport("dvui", dvui_dep.module("dvui_dx11"));
-        },
-        else => {
-            const dvui_dep = b.dependency("dvui", .{
-                .target = target,
-                .optimize = optimize,
-                .backend = .sdl3,
-            });
-            main_exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl3"));
-        },
-    }
+    const dvui_dep = b.dependency("dvui", .{
+        .target = target,
+        .optimize = optimize,
+        .backend = .sdl3,
+    });
+    main_exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl3"));
+    //switch (target.result.os.tag) {
+    //    .windows => {
+    //        const dvui_dep = b.dependency("dvui", .{
+    //            .target = target,
+    //            .optimize = optimize,
+    //            .backend = .dx11,
+    //        });
+    //        main_exe.root_module.addImport("dvui", dvui_dep.module("dvui_dx11"));
+    //    },
+    //    else => {
+    //        const dvui_dep = b.dependency("dvui", .{
+    //            .target = target,
+    //            .optimize = optimize,
+    //            .backend = .sdl3,
+    //        });
+    //        main_exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl3"));
+    //    },
+    //}
 
     // zqlite
     const zqlite = b.dependency("zqlite", .{
