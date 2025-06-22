@@ -9,8 +9,6 @@ const sitefs = @import("sitefs.zig");
 const constants = @import("constants.zig");
 const println = @import("util.zig").println;
 
-pub const SERVER_CMD = "server";
-
 pub const Server = struct {
     process: std.process.Child,
 

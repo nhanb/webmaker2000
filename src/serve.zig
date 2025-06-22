@@ -10,7 +10,7 @@ pub fn main() !u8 {
     const argv = try std.process.argsAlloc(global_dba);
     defer std.process.argsFree(global_dba, argv);
 
-    // wm2k <SERVER_CMD> <PORT>
+    // wm2k-server <PORT>
     // to start a web server.
     // This is to be run as a subprocess called by the main program.
     // It assumes the current working directory is the same dir that contains
