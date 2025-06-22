@@ -130,15 +130,12 @@ pub fn AppInit(win: *dvui.Window) !void {
     }
 
     try djot.init(global_dba);
-    defer djot.deinit();
-
-    // Create arena that is reset every frame:
-    frame_arena_impl = std.heap.ArenaAllocator.init(global_dba);
-    defer frame_arena_impl.deinit();
 }
 
 // Run as app is shutting down before dvui.Window.deinit()
 pub fn AppDeinit() void {
+    djot.deinit();
+
     core.deinit();
     if (maybe_server) |_| {
         maybe_server.?.deinit();
