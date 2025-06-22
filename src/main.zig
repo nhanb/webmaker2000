@@ -64,6 +64,7 @@ var frame_arena_impl: std.heap.ArenaAllocator = undefined;
 var frame_arena: mem.Allocator = undefined;
 var global_win: *dvui.Window = undefined;
 var maybe_server: ?server.Server = null;
+var default_theme: dvui.Theme = undefined;
 
 //pub fn main() !u8 {
 //    var dba_impl = std.heap.DebugAllocator(.{}){};
@@ -96,7 +97,8 @@ pub fn AppInit(win: *dvui.Window) !void {
     frame_arena_impl = .init(global_dba);
     frame_arena = frame_arena_impl.allocator();
 
-    argv = try std.process.argsAlloc(global_dba);
+    default_theme = theme.default();
+    dvui.themeSet(&default_theme);
 
     // TODO: is there any other way to pass a window pointer to AppFrame?
     global_win = win;
@@ -121,6 +123,7 @@ pub fn AppInit(win: *dvui.Window) !void {
     try win.keybinds.putNoClobber("wm2k_undo", .{ .control = true, .shift = false, .key = .z });
     try win.keybinds.putNoClobber("wm2k_redo", .{ .control = true, .shift = true, .key = .z });
 
+    argv = try std.process.argsAlloc(global_dba);
     if (argv.len == 2 and mem.endsWith(u8, argv[1], "." ++ EXTENSION)) {
         // TODO: how to handle errors (e.g. file not found) here? We can't draw
         // anything at this stage.
