@@ -33,7 +33,7 @@ pub fn default() dvui.Theme {
     return theme;
 }
 
-/// Thin wrapper easily toggle text entry's invalid state.
+/// Thin wrapper to easily toggle text entry's invalid state.
 /// It adds the necessary styling.
 pub fn textEntry(
     src: std.builtin.SourceLocation,
@@ -41,17 +41,17 @@ pub fn textEntry(
     opts: dvui.Options,
     // TODO: maybe turn this bool into a list of errors for custom rendering?
     invalid: bool,
-) !*dvui.TextEntryWidget {
+) *dvui.TextEntryWidget {
     if (!invalid) return dvui.textEntry(src, init_opts, opts);
 
     var invalid_opts = opts;
     invalid_opts.color_fill = .{ .color = .{ .r = 0xff, .g = 0xeb, .b = 0xe9 } };
     invalid_opts.color_accent = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } };
     invalid_opts.color_border = .{ .color = .{ .r = 0xff, .g = 0, .b = 0 } };
-    return try dvui.textEntry(src, init_opts, invalid_opts);
+    return dvui.textEntry(src, init_opts, invalid_opts);
 }
 
-/// Thin wrapper easily toggle button's disabled state.
+/// Thin wrapper to easily toggle button's disabled state.
 /// It adds the necessary styling, and always returns false when disabled.
 pub fn button(
     src: std.builtin.SourceLocation,
@@ -59,7 +59,7 @@ pub fn button(
     init_opts: dvui.ButtonWidget.InitOptions,
     opts: dvui.Options,
     disabled: bool,
-) !bool {
+) bool {
     if (!disabled) return dvui.button(src, label_str, init_opts, opts);
 
     var disabled_opts = opts;
@@ -68,11 +68,11 @@ pub fn button(
     disabled_opts.color_fill_hover = .{ .name = .fill_control };
     disabled_opts.color_fill_press = .{ .name = .fill_control };
     disabled_opts.color_accent = .{ .color = dvui.Color{ .a = 0x00 } };
-    _ = try dvui.button(src, label_str, init_opts, disabled_opts);
+    _ = dvui.button(src, label_str, init_opts, disabled_opts);
     return false;
 }
 
-pub fn errLabel(src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) !void {
+pub fn errLabel(src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) void {
     return dvui.label(src, fmt, args, .{
         .color_text = .{ .name = .err },
         .font_style = .caption,

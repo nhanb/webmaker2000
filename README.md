@@ -63,7 +63,7 @@ Statically compiled deps that can optionally be linked dynamically:
 zig build run
 
 # or, to watch:
-find src | entr -rc zig build run
+find . -path '*/src/*' -or -name '*.zig' -not -path '*/.zig-cache/*' | entr -rc zig build run
 
 # optionally, to dynamically link to system libraries:
 zig build -fsys=sdl3 -fsys=freetype -fsys=sqlite3 -fsys=lua
