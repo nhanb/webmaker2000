@@ -48,7 +48,7 @@ MVP checklist:
 
 Dependencies:
 
-- Build time: zig 0.14.0
+- Build time: zig 0.14.1
 - Runtime: libc
 
 Statically compiled deps that can optionally be linked dynamically:
