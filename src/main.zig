@@ -6,6 +6,7 @@ const fmt = std.fmt;
 const log = std.log;
 const allocPrint = std.fmt.allocPrint;
 const dvui = @import("dvui");
+const Backend = dvui.backend;
 const zqlite = @import("zqlite");
 
 const sql = @import("sql.zig");
@@ -24,6 +25,7 @@ const Core = core_.Core;
 const sitefs = @import("sitefs.zig");
 const blobstore = @import("blobstore.zig");
 const println = @import("util.zig").println;
+const butils = @import("backend_utils.zig");
 
 pub const main = dvui.App.main;
 
@@ -121,7 +123,7 @@ pub fn AppInit(win: *dvui.Window) !void {
         const window_title = try fmt.allocPrintZ(global_dba, "{s} - WebMaker2000", .{dir_name});
         defer global_dba.free(window_title);
         try queries.setStatusText(global_dba, conn, "Opened {s}", .{dir_name});
-        //_ = Backend.c.SDL_SetWindowTitle(dvui.backend.window, window_title);
+        try butils.setWindowTitle(frame_arena, win, window_title);
     }
 
     try djot.init(global_dba);
@@ -217,10 +219,12 @@ pub fn AppFrame() !dvui.App.Result {
 
                         const filename = fs.path.basename(new_site_dir_path);
                         try queries.setStatusText(frame_arena, conn, "Created {s}", .{filename});
-                        //_ = Backend.c.SDL_SetWindowTitle(
-                        //    backend.window,
-                        //    try fmt.allocPrintZ(frame_arena, "{s} - WebMaker2000", .{filename}),
-                        //);
+
+                        try butils.setWindowTitle(
+                            frame_arena,
+                            global_win,
+                            try fmt.allocPrintZ(frame_arena, "{s} - WebMaker2000", .{filename}),
+                        );
 
                         maybe_server = try server.Server.init(global_dba, PORT);
 
@@ -248,7 +252,9 @@ pub fn AppFrame() !dvui.App.Result {
 
                         // Change working directory to the same dir as the .wm2k file
                         if (fs.path.dirname(existing_file_path)) |dir_path| {
+                            println(">> dir_path: {s}", .{dir_path});
                             try std.posix.chdir(dir_path);
+                            println(">> successfully changed dir", .{});
                         }
 
                         maybe_server = try server.Server.init(global_dba, PORT);
@@ -258,10 +264,11 @@ pub fn AppFrame() !dvui.App.Result {
                         const dir_name = fs.path.basename(try fs.cwd().realpathAlloc(frame_arena, "."));
                         try queries.setStatusText(frame_arena, conn, "Opened {s}", .{dir_name});
 
-                        //_ = Backend.c.SDL_SetWindowTitle(
-                        //    backend.window,
-                        //    try fmt.allocPrintZ(frame_arena, "{s} - WebMaker2000", .{dir_name}),
-                        //);
+                        try butils.setWindowTitle(
+                            frame_arena,
+                            global_win,
+                            try fmt.allocPrintZ(frame_arena, "{s} - WebMaker2000", .{dir_name}),
+                        );
 
                         // Apparently interaction with the system file dialog
                         // does not count as user interaction in dvui, so
