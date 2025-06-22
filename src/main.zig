@@ -66,31 +66,6 @@ var global_win: *dvui.Window = undefined;
 var maybe_server: ?server.Server = null;
 var default_theme: dvui.Theme = undefined;
 
-//pub fn main() !u8 {
-//    var dba_impl = std.heap.DebugAllocator(.{}){};
-//    global_dba = dba_impl.allocator();
-//    defer _ = dba_impl.deinit();
-//
-//    argv = try std.process.argsAlloc(global_dba);
-//    defer std.process.argsFree(global_dba, argv);
-//
-//    // wm2k <SERVER_CMD> <PORT>
-//    // to start a web server.
-//    // This is to be run as a subprocess called by the main program.
-//    // It assumes the current working directory is the same dir that contains
-//    // the site.wm2k file.
-//    if (argv.len == 3 and mem.eql(u8, argv[1], server.SERVER_CMD)) {
-//        try server.serve(global_dba, argv[2]);
-//        return 0;
-//    }
-//
-//    return dvui.App.main();
-//    //const exit_code = try dvui.App.main();
-//    //if (exit_code != 0) {
-//    //    std.debug.panic("Non-zero exit code: {d}", .{exit_code});
-//    //}
-//}
-
 // Runs before the first frame, after backend and dvui.Window.init()
 pub fn AppInit(win: *dvui.Window) !void {
     global_dba = global_dba_impl.allocator();
@@ -174,15 +149,12 @@ pub fn AppDeinit() void {
     _ = global_dba_impl.deinit();
 }
 
-// Run each frame to do normal UI
+// In each frame:
+// - make sure arena is reset
+// - read gui_state fresh from database
+// - handle actions, preferrably by calling core.handleAction() which correctly
+//   wires up undo stack, etc.
 pub fn AppFrame() !dvui.App.Result {
-    return gui_frame();
-}
-
-fn gui_frame() !dvui.App.Result {
-    // In each frame:
-    // - make sure arena is reset
-    // - read gui_state fresh from database
     defer _ = frame_arena_impl.reset(.{ .retain_with_limit = 1024 * 1024 * 100 });
     frame_arena = frame_arena_impl.allocator();
 
@@ -208,11 +180,7 @@ fn gui_frame() !dvui.App.Result {
             dvui.label(@src(), "Create new site or open an existing one?", .{}, .{});
 
             {
-                var hbox = dvui.box(@src(), .horizontal, .{
-                    .expand = .both,
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                });
+                var hbox = dvui.box(@src(), .horizontal, .{ .expand = .both });
                 defer hbox.deinit();
 
                 if (dvui.button(@src(), "New...", .{}, .{})) {
