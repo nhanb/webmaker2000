@@ -9,6 +9,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .win32_manifest = b.path("./src/main.manifest"),
     });
 
     const serve_exe = b.addExecutable(.{
