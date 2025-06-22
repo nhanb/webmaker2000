@@ -25,11 +25,6 @@ const sitefs = @import("sitefs.zig");
 const blobstore = @import("blobstore.zig");
 const println = @import("util.zig").println;
 
-const Backend = dvui.backend;
-comptime {
-    std.debug.assert(@hasDecl(Backend, "SDLBackend"));
-}
-
 pub const main = dvui.App.main;
 
 // To be a dvui App:
