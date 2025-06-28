@@ -155,6 +155,21 @@ pub const Core = struct {
 
         try conn.commit();
     }
+
+    pub fn updateSelection(self: *Core, start: usize, end: usize) !void {
+        var conn = self.maybe_conn.?;
+
+        try sql.execNoArgs(conn, "begin immediate");
+        errdefer conn.rollback();
+
+        try sql.exec(
+            conn,
+            "update gui_post_content_selection set start_pos=?, end_pos=?;",
+            .{ start, end },
+        );
+
+        try conn.commit();
+    }
 };
 
 pub const ActionEnum = enum(i64) {
@@ -231,6 +246,10 @@ const SceneState = union(Scene) {
         post_errors: PostErrors,
         show_confirm_delete: bool,
         attachments: []Attachment,
+        selection: struct {
+            start: usize = 0,
+            end: usize = 0,
+        } = .{},
     },
 };
 
@@ -329,6 +348,13 @@ pub const GuiState = union(enum) {
                 }
                 try sql.check(attachment_rows.err, conn);
 
+                const selection_row = (try sql.selectRow(
+                    conn,
+                    "select start_pos, end_pos from gui_post_content_selection",
+                    .{},
+                )).?;
+                defer selection_row.deinit();
+
                 break :blk .{
                     .editing = .{
                         .post = post,
@@ -340,6 +366,10 @@ pub const GuiState = union(enum) {
                         },
                         .show_confirm_delete = show_confirm_delete,
                         .attachments = attachments.items,
+                        .selection = .{
+                            .start = @intCast(selection_row.int(0)),
+                            .end = @intCast(selection_row.int(1)),
+                        },
                     },
                 };
             },

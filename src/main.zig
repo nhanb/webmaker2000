@@ -564,6 +564,14 @@ pub fn AppFrame() !dvui.App.Result {
                                     },
                                 });
                             }
+                            const selection = content_entry.textLayout.selection;
+                            if (selection.start != scene.selection.start or
+                                selection.end != scene.selection.end)
+                            {
+                                try core.updateSelection(selection.start, selection.end);
+                                println(">> {} {}", .{ selection.start, selection.end });
+                            }
+
                             content_entry.deinit();
 
                             theme.errLabel(@src(), "{s}", .{
@@ -641,7 +649,7 @@ pub fn AppFrame() !dvui.App.Result {
                                     if (dvui.checkbox(
                                         @src(),
                                         &selected_bools.items[i],
-                                        try allocPrint(frame_arena, "{s} ({s})", .{ attachment.name, attachment.size }),
+                                        "",
                                         .{ .id_extra = i },
                                     )) {
                                         if (selected_bools.items[i]) {
@@ -649,6 +657,30 @@ pub fn AppFrame() !dvui.App.Result {
                                         } else {
                                             try core.handleAction(conn, frame_arena, .{ .deselect_attachment = attachment.id });
                                         }
+                                    }
+
+                                    if (dvui.labelClick(
+                                        @src(),
+                                        "{s} ({s})",
+                                        .{ attachment.name, attachment.size },
+                                        .{ .margin = .{ .x = -10 } },
+                                    )) {
+                                        println("clicked {s}", .{attachment.name});
+                                        const new_content = try fmt.allocPrint(frame_arena, "{s}{s}{s}", .{
+                                            scene.post.content[0..scene.selection.start],
+                                            attachment.name,
+                                            scene.post.content[scene.selection.end..],
+                                        });
+                                        try core.handleAction(
+                                            conn,
+                                            frame_arena,
+                                            .{
+                                                .update_post_content = .{
+                                                    .id = scene.post.id,
+                                                    .content = new_content,
+                                                },
+                                            },
+                                        );
                                     }
                                 }
                             }

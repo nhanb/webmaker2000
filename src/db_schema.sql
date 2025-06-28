@@ -135,3 +135,9 @@ create table gui_status_text (
     expires_at text default (datetime('now'))
 );
 insert into gui_status_text (id) values (0);
+
+create table gui_post_content_selection (
+    start_pos integer not null check (start_pos >= 0),
+    end_pos integer not null check (end_pos >= start_pos)
+);
+insert into gui_post_content_selection(start_pos, end_pos) values(0,0);
